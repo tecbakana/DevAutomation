@@ -598,7 +598,16 @@ body {
 .kanban-col-header.col-impeditivo   { background: #fff7ed; color: #ea580c; }
 .kanban-col-header.col-done         { background: var(--green-light); color: var(--green); }
 .kanban-col-header.col-error        { background: var(--red-light); color: var(--red); }
+.kanban-col-header.col-testes       { background: #f0f9ff; color: #0369a1; }
 .kanban-col-header.col-cancelado    { background: var(--surface2); color: var(--muted); border: 1px solid var(--border); }
+html[data-theme="dark"] .kanban-col-header.col-testes { background: #0369a118; color: #38bdf8; }
+.devreq-card.em_testes { border-left: 3px solid #0369a1; }
+.testes-comentario { margin-top: 8px; width: 100%; font-size: 12px; font-family: var(--sans); border: 1px solid var(--border); border-radius: 4px; padding: 6px 8px; background: var(--surface2); color: var(--text); resize: vertical; min-height: 52px; }
+.testes-actions { display: flex; gap: 6px; margin-top: 6px; }
+.btn-refazer { font-size: 11px; padding: 4px 10px; border-radius: 4px; border: 1px solid var(--red); color: var(--red); background: transparent; cursor: pointer; }
+.btn-refazer:hover { background: var(--red-light); }
+.btn-aprovar-testes { font-size: 11px; padding: 4px 10px; border-radius: 4px; border: none; color: #fff; background: var(--green); cursor: pointer; }
+.btn-aprovar-testes:hover { opacity: .85; }
 
 .devreq-card.cancelado .devreq-desc { text-decoration: line-through; opacity: .6; }
 .devreq-card.impeditivo { border-left: 3px solid #ea580c; }
@@ -1697,6 +1706,10 @@ select option { background: var(--surface); }
     <div class="nav-item" data-view="wiki" onclick="navigate('wiki', this)">
       <span class="nav-icon">📖</span> Wiki
     </div>
+    <div class="nav-separator"></div>
+    <div class="nav-item" data-view="rag" onclick="navigate('rag', this)">
+      <span class="nav-icon">🔍</span> RAG
+    </div>
   </nav>
 
   <div class="sidebar-footer">
@@ -1937,6 +1950,17 @@ select option { background: var(--surface); }
             <div class="kanban-empty">Sem itens</div>
           </div>
         </div>
+        <!-- Em Testes -->
+        <div class="kanban-col">
+          <div class="kanban-col-header col-testes">
+            <span class="col-dot" style="background:#0369a1"></span>
+            Em Testes
+            <span class="col-count" id="kcount-testes">0</span>
+          </div>
+          <div class="kanban-col-body" id="kcol-testes">
+            <div class="kanban-empty">Sem itens</div>
+          </div>
+        </div>
         <!-- Concluído -->
         <div class="kanban-col">
           <div class="kanban-col-header col-done">
@@ -2037,6 +2061,42 @@ select option { background: var(--surface); }
         <div class="wiki-content" id="wiki-content">
           <div class="wiki-placeholder">Selecione um documento no painel à esquerda.</div>
         </div>
+      </div>
+    </div>
+
+    <!-- ── VIEW: RAG ── -->
+    <div class="view" id="view-rag">
+      <div class="card">
+        <div class="card-title">Status do Índice RAG</div>
+        <div id="rag-status-content" style="display:flex;flex-direction:column;gap:12px">
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px">
+            <div style="padding:12px;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface)">
+              <div style="font-size:12px;color:var(--muted);margin-bottom:4px">Status</div>
+              <div style="font-weight:600;font-size:16px" id="rag-ready">Não indexado</div>
+            </div>
+            <div style="padding:12px;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface)">
+              <div style="font-size:12px;color:var(--muted);margin-bottom:4px">Total de Chunks</div>
+              <div style="font-weight:600;font-size:16px" id="rag-total">0</div>
+            </div>
+          </div>
+          <div style="padding:12px;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface)">
+            <div style="font-size:12px;color:var(--muted);margin-bottom:8px">Por Projeto</div>
+            <div id="rag-por-projeto" style="display:flex;flex-direction:column;gap:6px;font-size:13px"></div>
+          </div>
+          <button class="btn btn-primary btn-sm" id="rag-reindex-btn" onclick="reindexRag()" style="align-self:flex-start">
+            ↺ Reindexar
+          </button>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:16px">
+        <div class="card-title">Busca de Teste</div>
+        <div style="display:flex;gap:8px;margin-bottom:12px">
+          <input id="rag-search-input" type="text" class="form-input" placeholder="Digite uma query..." onkeydown="if(event.key==='Enter') searchRag()" />
+          <input id="rag-search-limit" type="number" class="form-input" placeholder="Limite" value="5" min="1" max="20" style="width:80px" />
+          <button class="btn btn-primary btn-sm" onclick="searchRag()">Buscar</button>
+        </div>
+        <div id="rag-search-results" style="display:flex;flex-direction:column;gap:8px;font-size:13px"></div>
       </div>
     </div>
 
@@ -2323,6 +2383,7 @@ const viewTitles = {
   roadmap:            'Roadmap',
   'projeto-detalhe':  'Projeto',
   wiki:               'Wiki',
+  rag:                'RAG',
 };
 
 function navigate(view, el) {
@@ -2336,6 +2397,7 @@ function navigate(view, el) {
   if (view === 'roadmap')     renderRoadmap();
   if (view === 'devrequests') loadDevRequests();
   if (view === 'wiki')        loadWikiIndex();
+  if (view === 'rag')         loadRagStats();
 }
 
 function navigateToProject(id) {
@@ -2594,6 +2656,7 @@ function renderKanban(arr) {
       aguardando: arr.filter(i => i.status === 'aguardando_aprovacao' || i.status === 'aguardando'),
       inprogress: arr.filter(i => i.status === 'in_progress'),
       impeditivo: arr.filter(i => i.status === 'impeditivo'),
+      testes:     arr.filter(i => i.status === 'em_testes'),
       done:       arr.filter(i => i.status === 'done' || i.status === 'concluido'),
       error:      arr.filter(i => i.status === 'error'),
       cancelado:  arr.filter(i => i.status === 'cancelado'),
@@ -2613,8 +2676,15 @@ function renderKanban(arr) {
         ? `<div class="devreq-pendencia-hint">pendência do agente</div>`
         : '';
 
+      const testesBlock = st === 'em_testes' ? `
+        <textarea class="testes-comentario" id="tc-${item.id}" placeholder="Comentários sobre os testes..." onclick="event.stopPropagation()">${item.comentarios_teste || ''}</textarea>
+        <div class="testes-actions" onclick="event.stopPropagation()">
+          <button class="btn-aprovar-testes" onclick="aprovarTestes('${item.id}')">Aprovar</button>
+          <button class="btn-refazer" onclick="refazerDevReq('${item.id}')">Refazer</button>
+        </div>` : '';
+
       return `
-        <div class="devreq-card impacto-${item.impacto}${st === 'cancelado' ? ' cancelado' : ''}${st === 'impeditivo' ? ' impeditivo' : ''}" id="devreq-${item.id}" onclick="openDevReqModal('${item.id}')">
+        <div class="devreq-card impacto-${item.impacto}${st === 'cancelado' ? ' cancelado' : ''}${st === 'impeditivo' ? ' impeditivo' : ''}${st === 'em_testes' ? ' em_testes' : ''}" id="devreq-${item.id}" onclick="openDevReqModal('${item.id}')">
           <div class="devreq-meta">
             <span class="devreq-tag">${item.api}</span>
             <span class="devreq-tag">${item.tipo}</span>
@@ -2623,6 +2693,7 @@ function renderKanban(arr) {
           </div>
           <div class="devreq-desc">${item.descricao || ''}</div>
           ${pendenciaHint}
+          ${testesBlock}
           <div class="devreq-time">${new Date(item.timestamp).toLocaleString('pt-BR')}</div>
         </div>`;
     };
@@ -2762,6 +2833,9 @@ function openDevReqModal(id) {
   } else if (st === 'impeditivo') {
     actions = `<button class="btn btn-primary btn-sm" onclick="responderERetomar('${item.id}','${item.api}')" style="background:#ea580c;color:#fff">Retomar</button>
                <button class="btn btn-ghost btn-sm" onclick="devRequestAction('${item.id}','${item.api}','cancelar');closeDevReqModal()" style="color:var(--muted)">Cancelar</button>`;
+  } else if (st === 'em_testes') {
+    actions = `<button class="btn btn-primary btn-sm" onclick="aprovarTestes('${item.id}');closeDevReqModal()" style="background:var(--green);color:#fff">Aprovar Testes</button>
+               <button class="btn btn-ghost btn-sm" onclick="refazerDevReq('${item.id}');closeDevReqModal()" style="color:var(--red)">Refazer</button>`;
   } else if (st === 'error') {
     actions = `<button class="btn btn-ghost btn-sm" onclick="devRequestAction('${item.id}','${item.api}','implementar');closeDevReqModal()">Retentar</button>
                <button class="btn btn-ghost btn-sm" onclick="devRequestAction('${item.id}','${item.api}','cancelar');closeDevReqModal()" style="color:var(--muted)">Cancelar</button>
@@ -2777,6 +2851,36 @@ function openDevReqModal(id) {
 
 function closeDevReqModal() {
   document.getElementById('modal-devreq-detail').classList.remove('show');
+}
+
+async function aprovarTestes(id) {
+  const item = devReqsCache.find(i => i.id === id);
+  if (!item) return;
+  const comentario = document.getElementById(`tc-${id}`)?.value || '';
+  if (comentario) {
+    await fetch(`${API_BASE}/devrequests/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ comentarios_teste: comentario })
+    });
+  }
+  await devRequestAction(id, item.api, 'aprovar_testes');
+  showToast('Implementação aprovada — concluída.', 'success');
+}
+
+async function refazerDevReq(id) {
+  const item = devReqsCache.find(i => i.id === id);
+  if (!item) return;
+  const comentario = document.getElementById(`tc-${id}`)?.value || '';
+  if (comentario) {
+    await fetch(`${API_BASE}/devrequests/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ comentarios_teste: comentario })
+    });
+  }
+  await devRequestAction(id, item.api, 'refazer');
+  showToast('Dev Request enviada para refatoração.', 'warning');
 }
 
 function openEditDevReqModal(id) {
@@ -3908,6 +4012,90 @@ async function loadWikiFile(path) {
     _wikiCurrentPath = path;
   } catch (e) {
     content.innerHTML = '<div class="wiki-placeholder">Erro ao carregar documento.</div>';
+  }
+}
+
+// =============================================================================
+// RAG — STATS / REINDEX / SEARCH
+// =============================================================================
+
+async function loadRagStats() {
+  try {
+    const res  = await fetch(`${API_BASE}/rag/stats`);
+    const data = await res.json();
+
+    document.getElementById('rag-ready').textContent = data.ready ? '✓ Pronto' : '✗ Não indexado';
+    document.getElementById('rag-ready').style.color = data.ready ? 'var(--green)' : 'var(--red)';
+    document.getElementById('rag-total').textContent = data.totalChunks.toString();
+
+    const porProjetoDiv = document.getElementById('rag-por-projeto');
+    const items = Object.entries(data.porProjeto || {})
+      .map(([proj, count]) => `<div><strong>${proj}:</strong> ${count} chunks</div>`)
+      .join('');
+    porProjetoDiv.innerHTML = items || '<div style="color:var(--muted)">Nenhum projeto indexado</div>';
+  } catch (e) {
+    log('error', `Erro ao carregar stats RAG: ${e.message}`);
+  }
+}
+
+async function reindexRag() {
+  const btn = document.getElementById('rag-reindex-btn');
+  const original = btn.textContent;
+  btn.textContent = '⟳ Reindexando...';
+  btn.disabled = true;
+
+  try {
+    const res = await fetch(`${API_BASE}/rag/reindex`, { method: 'POST' });
+    const data = await res.json();
+
+    if (data.ok) {
+      log('info', `RAG reindexado: ${data.totalChunks} chunks`);
+      await loadRagStats();
+    } else {
+      log('error', 'Erro ao reindexar RAG');
+    }
+  } catch (e) {
+    log('error', `Erro ao reindexar: ${e.message}`);
+  } finally {
+    btn.textContent = original;
+    btn.disabled = false;
+  }
+}
+
+async function searchRag() {
+  const query = document.getElementById('rag-search-input').value.trim();
+  const limit = parseInt(document.getElementById('rag-search-limit').value) || 5;
+  const resultsDiv = document.getElementById('rag-search-results');
+
+  if (!query) {
+    resultsDiv.innerHTML = '<div style="color:var(--muted)">Digite uma query...</div>';
+    return;
+  }
+
+  resultsDiv.innerHTML = '<div style="color:var(--muted)">Buscando...</div>';
+
+  try {
+    const res = await fetch(`${API_BASE}/rag/search?q=${encodeURIComponent(query)}&limit=${limit}`);
+    const data = await res.json();
+
+    if (!Array.isArray(data) || data.length === 0) {
+      resultsDiv.innerHTML = '<div style="color:var(--muted)">Nenhum resultado encontrado.</div>';
+      return;
+    }
+
+    resultsDiv.innerHTML = data.map((chunk, idx) => `
+      <div style="padding:10px;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface)">
+        <div style="font-size:12px;color:var(--muted);margin-bottom:4px">
+          <strong>${chunk.projeto}</strong> • ${chunk.tipo} • ${chunk.fonte}
+        </div>
+        <div style="font-size:13px;line-height:1.4;color:var(--text);white-space:pre-wrap;word-break:break-word;max-height:120px;overflow:auto">
+          ${chunk.conteudo.replace(/</g, '&lt;').replace(/>/g, '&gt;')}
+        </div>
+      </div>
+    `).join('');
+  } catch (e) {
+    log('error', `Erro na busca RAG: ${e.message}`);
+    resultsDiv.innerHTML = '<div style="color:var(--red)">Erro ao buscar.</div>';
   }
 }
 

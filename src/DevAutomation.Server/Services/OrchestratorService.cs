@@ -14,6 +14,7 @@ public class OrchestratorService : BackgroundService
     private readonly ILogger<OrchestratorService> _logger;
     private FileSystemWatcher? _watcher;
 
+    private readonly RagService _rag;
     private readonly System.Collections.Concurrent.ConcurrentDictionary<string, Process> _runningProcesses = new();
 
     private static readonly JsonSerializerOptions _jsonOpts = new() { WriteIndented = true };
@@ -21,12 +22,14 @@ public class OrchestratorService : BackgroundService
     public OrchestratorService(
         IConfiguration config,
         IHubContext<OrchestratorHub> hub,
-        ILogger<OrchestratorService> logger)
+        ILogger<OrchestratorService> logger,
+        RagService rag)
     {
         _devRequestsDir = config["DevAutomation:DevRequestsDir"]!;
         _claudePath     = config["DevAutomation:ClaudePath"] ?? "claude";
         _hub     = hub;
         _logger  = logger;
+        _rag     = rag;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -104,8 +107,30 @@ public class OrchestratorService : BackgroundService
             prompt = $"{prompt}\n\n--- CONTEXTO ADICIONAL ---\nVocê havia solicitado esclarecimentos: {request.Pendencias}\nResposta do usuário: {request.RespostaUsuario}";
         }
 
+        // Busca contexto RAG filtrado pelo projeto da dev-request
+        var projeto = request.Api?.ToLower() switch
+        {
+            "cmsx" or "multiplai" => new[] { "cmsx" },
+            "salematic"           => new[] { "salematic" },
+            "forge"               => new[] { "forge" },
+            _                     => null
+        };
+
+        var queryRag     = (request.Descricao + " " + request.Detalhes).Trim();
+        var ragChunks    = await _rag.QueryAsync(queryRag, topK: 5, filtrosProjeto: projeto);
+        var contextoRag  = ragChunks.Count > 0
+            ? await _rag.BuildContextAsync(queryRag, topK: 5, filtrosProjeto: projeto)
+            : "";
+
         // Instrui Claude a sinalizar impeditivos de forma estruturada
         prompt = "REGRA OBRIGATÓRIA: Se você precisar de qualquer informação antes de implementar, ou se houver qualquer ambiguidade que impeça a implementação segura, você DEVE responder SOMENTE com este JSON — sem texto antes, sem texto depois, sem markdown:\n{\"impeditivo\": true, \"pendencias\": \"descreva suas dúvidas aqui\"}\nNão escreva código, não escreva explicação, não use markdown. Somente o JSON acima.\n\n---\n\n" + prompt;
+
+        if (!string.IsNullOrEmpty(contextoRag))
+        {
+            prompt = contextoRag + "\n\n---\n\n" + prompt;
+            _logger.LogInformation("[RAG] Contexto injetado para dev-request {Id}: {N} chunks do projeto {Projeto}",
+                request.Id, ragChunks.Count, projeto is { Length: > 0 } ? string.Join(",", projeto) : "todos");
+        }
 
         var agentModel = new Dictionary<string, string>
         {
@@ -165,7 +190,7 @@ public class OrchestratorService : BackgroundService
             }
             else
             {
-                request.Status    = process.ExitCode == 0 ? "done" : "error";
+                request.Status    = process.ExitCode == 0 ? "em_testes" : "error";
                 request.Resultado = process.ExitCode == 0 ? output : error;
             }
         }
@@ -255,6 +280,19 @@ public class OrchestratorService : BackgroundService
                 }
                 break;
             case "retomar":
+                await DispatchAsync(request, file);
+                break;
+            case "aprovar_testes":
+                request.Status = "done";
+                request.TimestampAtualizacao = DateTime.UtcNow;
+                await SaveAsync(file, request);
+                await NotifyAsync(request);
+                break;
+            case "refazer":
+                request.Status = "in_progress";
+                request.TimestampAtualizacao = DateTime.UtcNow;
+                await SaveAsync(file, request);
+                await NotifyAsync(request);
                 await DispatchAsync(request, file);
                 break;
             case "ignorar":

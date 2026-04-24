@@ -1,6 +1,7 @@
 using DevAutomation.Hubs;
 using DevAutomation.Services;
 using Microsoft.Extensions.FileProviders;
+using Serilog;
 using Swashbuckle.AspNetCore.SwaggerGen;
 
 // Detecta o diretório raiz do Forge independente do nome da pasta
@@ -10,7 +11,14 @@ while (searchDir != null && !Directory.Exists(Path.Combine(searchDir.FullName, "
 var rootPath = searchDir?.FullName
     ?? throw new InvalidOperationException("Diretório raiz do Forge não encontrado (pasta 'config' ausente).");
 
+Log.Logger = new LoggerConfiguration()
+    .MinimumLevel.Information()
+    .WriteTo.Console()
+    .WriteTo.Seq("http://localhost:5341")
+    .CreateLogger();
+
 var builder = WebApplication.CreateBuilder(args);
+builder.Host.UseSerilog();
 builder.Configuration["DevAutomation:RootPath"]      = rootPath;
 builder.Configuration["DevAutomation:ConfigFile"]    = Path.Combine(rootPath, "config", "environments.json");
 builder.Configuration["DevAutomation:StateFile"]     = Path.Combine(rootPath, "config", "state.json");
@@ -26,6 +34,10 @@ builder.Services.AddSingleton<ConfigService>();
 builder.Services.AddHttpClient<GeminiService>();
 builder.Services.AddSingleton<OrchestratorService>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<OrchestratorService>());
+builder.Services.AddSingleton<RagIndexerService>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<RagIndexerService>());
+builder.Services.AddHttpClient();
+builder.Services.AddSingleton<RagService>();
 builder.Services.AddSwaggerGen();
 
 builder.WebHost.UseUrls("http://localhost:8080");

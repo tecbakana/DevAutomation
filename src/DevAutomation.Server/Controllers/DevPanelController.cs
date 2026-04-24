@@ -13,6 +13,8 @@ public class DevPanelController : ControllerBase
     private readonly ConfigService _config;
     private readonly GeminiService _gemini;
     private readonly OrchestratorService _orchestrator;
+    private readonly RagIndexerService _ragIndexer;
+    private readonly RagService _ragService;
     private readonly string _templatesDir;
     private readonly string _switchScript;
     private readonly ILogger<DevPanelController> _logger;
@@ -22,12 +24,16 @@ public class DevPanelController : ControllerBase
         ConfigService config,
         GeminiService gemini,
         OrchestratorService orchestrator,
+        RagIndexerService ragIndexer,
+        RagService ragService,
         IConfiguration cfg,
         ILogger<DevPanelController> logger)
     {
         _config       = config;
         _gemini       = gemini;
         _orchestrator = orchestrator;
+        _ragIndexer   = ragIndexer;
+        _ragService   = ragService;
         _cfg          = cfg;
         _templatesDir = cfg["DevAutomation:TemplatesDir"]!;
         _switchScript = cfg["DevAutomation:SwitchScript"]!;
@@ -269,7 +275,7 @@ public class DevPanelController : ControllerBase
             await Task.Delay(500);
             Process.Start(new ProcessStartInfo
             {
-                FileName        = @"T:\devautomation\batches\start-server.bat",
+                FileName        = @"T:\Developer\RepositorioTrabalho\tecbakana\ForgeV2\batches\start-server.bat",
                 UseShellExecute = true
             });
             Environment.Exit(0);
@@ -530,8 +536,9 @@ public class DevPanelController : ControllerBase
         req.Tipo                 = body.Tipo ?? req.Tipo;
         req.Impacto              = body.Impacto ?? req.Impacto;
         req.Descricao            = body.Descricao ?? req.Descricao;
-        req.Detalhes             = body.Detalhes;
-        req.DiretorioAlvo        = body.DiretorioAlvo;
+        req.Detalhes             = body.Detalhes ?? req.Detalhes;
+        req.DiretorioAlvo        = body.DiretorioAlvo ?? req.DiretorioAlvo;
+        req.ComentariosTeste     = body.ComentariosTeste ?? req.ComentariosTeste;
         req.TimestampAtualizacao = DateTime.UtcNow;
 
         System.IO.File.WriteAllText(path, JsonSerializer.Serialize(req, new JsonSerializerOptions { WriteIndented = true }));
@@ -567,6 +574,42 @@ public class DevPanelController : ControllerBase
         System.IO.File.WriteAllText(path, JsonSerializer.Serialize(req, new JsonSerializerOptions { WriteIndented = true }));
 
         return Ok(new { success = true });
+    }
+
+    // ── RAG ───────────────────────────────────────────────────────────────────
+
+    [HttpGet("rag/stats")]
+    public IActionResult RagStats()
+    {
+        var (total, porProjeto) = _ragIndexer.GetStats();
+        return Ok(new
+        {
+            ready       = _ragIndexer.IsReady,
+            totalChunks = total,
+            porProjeto  = porProjeto
+        });
+    }
+
+    [HttpPost("rag/reindex")]
+    public async Task<IActionResult> RagReindex()
+    {
+        await _ragIndexer.ReindexAsync();
+        var (total, porProjeto) = _ragIndexer.GetStats();
+        return Ok(new { ok = true, totalChunks = total, porProjeto = porProjeto });
+    }
+
+    [HttpGet("rag/search")]
+    public async Task<IActionResult> RagSearch([FromQuery] string q, [FromQuery] int limit = 5, [FromQuery] string? project = null)
+    {
+        var filtros = project != null ? new[] { project } : null;
+        var chunks  = await _ragService.QueryAsync(q, limit, filtros);
+        return Ok(chunks.Select(c => new
+        {
+            c.Fonte,
+            c.Projeto,
+            c.Tipo,
+            conteudo = c.Conteudo[..Math.Min(300, c.Conteudo.Length)]
+        }));
     }
 
     // ── HELPERS ───────────────────────────────────────────────────────────────
@@ -722,7 +765,7 @@ public class DevPanelController : ControllerBase
 
 public record DevRequestActionBody(string? Id, string? Api, string? Action);
 public record DevRequestResponderBody(string? Id, string? Resposta);
-public record DevRequestEditBody(string? Api, string? Tipo, string? Impacto, string? Descricao, string? Detalhes, string? DiretorioAlvo);
+public record DevRequestEditBody(string? Api, string? Tipo, string? Impacto, string? Descricao, string? Detalhes, string? DiretorioAlvo, string? ComentariosTeste);
 public record StartAppsRequest(string Api);
 
 public record SwitchRequest

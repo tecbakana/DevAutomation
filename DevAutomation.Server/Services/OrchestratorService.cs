@@ -116,7 +116,7 @@ public class OrchestratorService : BackgroundService
             var error  = await process.StandardError.ReadToEndAsync();
             await process.WaitForExitAsync();
 
-            request.Status    = process.ExitCode == 0 ? "done" : "error";
+            request.Status    = process.ExitCode == 0 ? "em_testes" : "error";
             request.Resultado = process.ExitCode == 0 ? output : error;
         }
         catch (Exception ex)
@@ -176,6 +176,19 @@ public class OrchestratorService : BackgroundService
                 request.Status = "cancelado";
                 request.TimestampAtualizacao = DateTime.UtcNow;
                 await SaveAsync(file, request);
+                break;
+            case "aprovar_testes":
+                request.Status = "done";
+                request.TimestampAtualizacao = DateTime.UtcNow;
+                await SaveAsync(file, request);
+                await NotifyAsync(request);
+                break;
+            case "refazer":
+                request.Status = "in_progress";
+                request.TimestampAtualizacao = DateTime.UtcNow;
+                await SaveAsync(file, request);
+                await NotifyAsync(request);
+                await DispatchAsync(request, file);
                 break;
             case "ignorar":
                 File.Delete(file);

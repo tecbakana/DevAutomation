@@ -51,6 +51,9 @@ public class DevRequest
     [JsonPropertyName("resposta_usuario")]
     public string? RespostaUsuario { get; set; }
 
+    [JsonPropertyName("comentarios_teste")]
+    public string? ComentariosTeste { get; set; }
+
     [JsonPropertyName("timestamp_atualizacao")]
     public DateTime? TimestampAtualizacao { get; set; }
 }

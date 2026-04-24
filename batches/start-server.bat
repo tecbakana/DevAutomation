@@ -6,4 +6,4 @@ timeout /t 2 /nobreak >nul
 echo [DevPanel] Iniciando servidor .NET (ASP.NET Core + SignalR)...
 echo [DevPanel] Acesse: http://localhost:8080
 start "" "http://localhost:8080"
-dotnet run --project "%~dp0..\DevAutomation.Server\DevAutomation.Server.csproj" --configuration Release
+dotnet run --project "%~dp0..\src\DevAutomation.Server\DevAutomation.Server.csproj" --configuration Release

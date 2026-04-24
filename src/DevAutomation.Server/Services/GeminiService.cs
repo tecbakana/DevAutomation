@@ -184,6 +184,19 @@ public class GeminiService
         return ParseResponse(raw);
     }
 
+    public async Task<float[]> GetEmbeddingAsync(string apiKey, string text)
+    {
+        var url  = $"https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-001:embedContent?key={apiKey}";
+        var body = JsonSerializer.Serialize(new { content = new { parts = new[] { new { text } } } });
+        var resp = await _http.PostAsync(url, new StringContent(body, Encoding.UTF8, "application/json"));
+        var raw  = await resp.Content.ReadAsStringAsync();
+        var doc  = JsonNode.Parse(raw);
+        var vals = doc?["embedding"]?["values"]?.AsArray();
+        if (vals == null)
+            throw new InvalidOperationException($"Resposta de embedding inválida: {raw}");
+        return [.. vals.Select(v => v!.GetValue<float>())];
+    }
+
     private GeminiResponse ParseResponse(string raw)
     {
         try
