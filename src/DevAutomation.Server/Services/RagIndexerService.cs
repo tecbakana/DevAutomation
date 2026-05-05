@@ -1,22 +1,21 @@
-using System.Text.Json;
-using System.Text.Json.Nodes;
-using System.Text;
 using DevAutomation.Models;
-using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.AI;
+using Microsoft.Extensions.Options;
+using Microsoft.SemanticKernel.Text;
+using Qdrant.Client;
+using Qdrant.Client.Grpc;
 
 namespace DevAutomation.Services;
 
 public class RagIndexerService : BackgroundService
 {
-    private readonly IHttpClientFactory _httpFactory;
-    private readonly IConfiguration _config;
+    private readonly IEmbeddingGenerator<string, Embedding<float>> _embedder;
+    private readonly QdrantClient _qdrant;
+    private readonly OllamaSettings _ollamaSettings;
     private readonly ILogger<RagIndexerService> _logger;
 
-    private const string OllamaUrl   = "http://localhost:11434/api/embeddings";
-    private const string OllamaModel = "nomic-embed-text";
-
-    private List<RagChunk> _index = [];
-    private static readonly JsonSerializerOptions _json = new() { WriteIndented = false };
+    private const string Collection = "forge_rag";
+    private const ulong  VectorSize = 768;
 
     private static readonly (string Root, string Projeto, string[] Exts)[] _sources =
     [
@@ -29,38 +28,44 @@ public class RagIndexerService : BackgroundService
     private static readonly string[] _ignoredSuffixes  = [".Designer.cs"];
     private static readonly string[] _ignoredContains  = ["Migrations"];
 
-    public bool IsReady => _index.Count > 0;
+    public bool   IsReady        { get; private set; }
+    public string CollectionName => Collection;
 
-    public List<RagChunk> GetChunks() => _index;
-
-    public (int TotalChunks, Dictionary<string, int> PorProjeto) GetStats()
+    public RagIndexerService(
+        IEmbeddingGenerator<string, Embedding<float>> embedder,
+        QdrantClient qdrant,
+        IOptions<OllamaSettings> options,
+        ILogger<RagIndexerService> logger)
     {
-        var porProjeto = _index.GroupBy(c => c.Projeto).ToDictionary(g => g.Key, g => g.Count());
-        return (_index.Count, porProjeto);
-    }
-
-    public RagIndexerService(IHttpClientFactory httpFactory, IConfiguration config, ILogger<RagIndexerService> logger)
-    {
-        _httpFactory = httpFactory;
-        _config      = config;
-        _logger      = logger;
+        _embedder = embedder;
+        _qdrant   = qdrant;
+        _ollamaSettings = options.Value;
+        _logger   = logger;
     }
 
     protected override async Task ExecuteAsync(CancellationToken ct)
     {
-        var indexPath = GetIndexPath();
-        bool stale = !File.Exists(indexPath) ||
-                     (DateTime.UtcNow - File.GetLastWriteTimeUtc(indexPath)).TotalHours > 24;
-
-        if (stale)
+        await EnsureCollectionAsync(ct);
+        var count = await _qdrant.CountAsync(Collection, cancellationToken: ct);
+        if (count == 0)
             await ReindexAsync(ct);
         else
-            await LoadIndexAsync(indexPath);
+        {
+            IsReady = true;
+            _logger.LogInformation("Qdrant: {Count} vetores já indexados", count);
+        }
     }
 
     public async Task ReindexAsync(CancellationToken ct = default)
     {
-        var chunks = new List<RagChunk>();
+        IsReady = false;
+        var existing = await _qdrant.ListCollectionsAsync(ct);
+        if (existing.Contains(Collection))
+            await _qdrant.DeleteCollectionAsync(Collection, cancellationToken: ct);
+        await EnsureCollectionAsync(ct);
+
+        var batch = new List<PointStruct>();
+        int total = 0;
 
         foreach (var (root, projeto, exts) in _sources)
         {
@@ -80,101 +85,91 @@ public class RagIndexerService : BackgroundService
             {
                 if (ct.IsCancellationRequested) return;
 
-                var lines = await File.ReadAllLinesAsync(file, ct);
+                var lines    = await File.ReadAllLinesAsync(file, ct);
                 var relativo = Path.GetRelativePath(root, file);
-                var tipo = DeterminaTipo(file, projeto);
+                var tipo     = DeterminaTipo(file, projeto);
 
-                _logger.LogInformation("Indexando [{Projeto}] {Rel} ({N} linhas)", projeto, relativo, lines.Length);
+#pragma warning disable SKEXP0050
+                var chunks = TextChunker.SplitPlainTextParagraphs(lines, maxTokensPerParagraph: 400, overlapTokens: 40);
+#pragma warning restore SKEXP0050
+                _logger.LogInformation("Indexando [{Projeto}] {Rel} → {N} chunks", projeto, relativo, chunks.Count);
 
-                var blocos = Chunkar(lines);
-                foreach (var bloco in blocos)
+                foreach (var chunk in chunks)
                 {
+                    if (ct.IsCancellationRequested) return;
+
                     try
                     {
-                        var vetor = await GetEmbeddingAsync(bloco, ct);
-                        chunks.Add(new RagChunk
+                        var embeddingOptions = new EmbeddingGenerationOptions { AdditionalProperties = new() { ["num_ctx"] = _ollamaSettings.NumCtx } };
+                        var embeddingResult = await _embedder.GenerateAsync([chunk], embeddingOptions, cancellationToken: ct);
+                var embedding = embeddingResult[0].Vector;
+                        batch.Add(new PointStruct
                         {
-                            Conteudo = bloco,
-                            Fonte    = relativo,
-                            Tipo     = tipo,
-                            Projeto  = projeto,
-                            Vetor    = vetor
+                            Id      = new PointId { Uuid = Guid.NewGuid().ToString() },
+                            Vectors = embedding.ToArray(),
+                            Payload =
+                            {
+                                ["conteudo"] = chunk,
+                                ["fonte"]    = relativo,
+                                ["projeto"]  = projeto,
+                                ["tipo"]     = tipo
+                            }
                         });
-                        if (chunks.Count % 50 == 0)
+                        total++;
+
+                        if (batch.Count >= 100)
                         {
-                            var ip = GetIndexPath();
-                            Directory.CreateDirectory(Path.GetDirectoryName(ip)!);
-                            await File.WriteAllTextAsync(ip, JsonSerializer.Serialize(chunks, _json), ct);
-                            _logger.LogInformation("Checkpoint: {Total} chunks salvos", chunks.Count);
+                            await _qdrant.UpsertAsync(Collection, batch, cancellationToken: ct);
+                            batch.Clear();
+                            _logger.LogInformation("Checkpoint: {Total} chunks enviados ao Qdrant", total);
                         }
                     }
                     catch (Exception ex)
                     {
                         _logger.LogError(ex, "Erro ao gerar embedding: {File}", file);
                     }
-                }
+                }''
             }
         }
 
-        var indexPath = GetIndexPath();
-        Directory.CreateDirectory(Path.GetDirectoryName(indexPath)!);
-        await File.WriteAllTextAsync(indexPath, JsonSerializer.Serialize(chunks, _json), ct);
+        if (batch.Count > 0)
+            await _qdrant.UpsertAsync(Collection, batch, cancellationToken: ct);
 
-        _index = chunks;
-        _logger.LogInformation("Indexação concluída: {Total} chunks", _index.Count);
+        IsReady = true;
+        _logger.LogInformation("Indexação concluída: {Total} chunks no Qdrant", total);
     }
 
-    private async Task<float[]> GetEmbeddingAsync(string text, CancellationToken ct)
+    public async Task<(int TotalChunks, Dictionary<string, int> PorProjeto)> GetStatsAsync(CancellationToken ct = default)
     {
-        var http  = _httpFactory.CreateClient();
-        var body  = JsonSerializer.Serialize(new { model = OllamaModel, prompt = text });
-        var resp  = await http.PostAsync(OllamaUrl, new StringContent(body, Encoding.UTF8, "application/json"), ct);
-        var raw   = await resp.Content.ReadAsStringAsync(ct);
-        var doc   = JsonNode.Parse(raw);
-        var vals  = doc?["embedding"]?.AsArray();
-        if (vals == null) throw new InvalidOperationException($"Resposta Ollama inválida: {raw}");
-        return [.. vals.Select(v => v!.GetValue<float>())];
+        var total     = (int)await _qdrant.CountAsync(Collection, cancellationToken: ct);
+        var projetos  = _sources.Select(s => s.Projeto).Distinct();
+        var porProjeto = new Dictionary<string, int>();
+
+        foreach (var p in projetos)
+        {
+            var filter = new Filter
+            {
+                Must =
+                {
+                    new Condition
+                    {
+                        Field = new FieldCondition { Key = "projeto", Match = new Match { Text = p } }
+                    }
+                }
+            };
+            porProjeto[p] = (int)await _qdrant.CountAsync(Collection, filter: filter, cancellationToken: ct);
+        }
+
+        return (total, porProjeto);
     }
 
-    private async Task LoadIndexAsync(string path)
+    private async Task EnsureCollectionAsync(CancellationToken ct)
     {
-        try
-        {
-            var json = await File.ReadAllTextAsync(path);
-            _index = JsonSerializer.Deserialize<List<RagChunk>>(json) ?? [];
-            _logger.LogInformation("Índice RAG carregado: {Total} chunks", _index.Count);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Erro ao carregar índice RAG");
-        }
-    }
-
-    private string GetIndexPath()
-    {
-        var root = _config["DevAutomation:RootPath"]
-            ?? @"T:\Developer\RepositorioTrabalho\tecbakana\ForgeV2";
-        return Path.Combine(root, "data", "rag-index.json");
-    }
-
-    private static IEnumerable<string> Chunkar(string[] lines)
-    {
-        if (lines.Length <= 300)
-        {
-            yield return string.Join('\n', lines);
-            yield break;
-        }
-
-        const int tamanho = 150;
-        const int overlap  = 20;
-        int inicio = 0;
-        while (inicio < lines.Length)
-        {
-            var fim = Math.Min(inicio + tamanho, lines.Length);
-            yield return string.Join('\n', lines[inicio..fim]);
-            inicio = fim - overlap;
-            if (inicio >= lines.Length - overlap) break;
-        }
+        var existing = await _qdrant.ListCollectionsAsync(ct);
+        if (!existing.Contains(Collection))
+            await _qdrant.CreateCollectionAsync(Collection,
+                new VectorParams { Size = VectorSize, Distance = Distance.Cosine },
+                cancellationToken: ct);
     }
 
     private static string DeterminaTipo(string path, string projeto)

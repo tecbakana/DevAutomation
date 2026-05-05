@@ -579,9 +579,9 @@ public class DevPanelController : ControllerBase
     // ── RAG ───────────────────────────────────────────────────────────────────
 
     [HttpGet("rag/stats")]
-    public IActionResult RagStats()
+    public async Task<IActionResult> RagStats()
     {
-        var (total, porProjeto) = _ragIndexer.GetStats();
+        var (total, porProjeto) = await _ragIndexer.GetStatsAsync();
         return Ok(new
         {
             ready       = _ragIndexer.IsReady,
@@ -594,7 +594,7 @@ public class DevPanelController : ControllerBase
     public async Task<IActionResult> RagReindex()
     {
         await _ragIndexer.ReindexAsync();
-        var (total, porProjeto) = _ragIndexer.GetStats();
+        var (total, porProjeto) = await _ragIndexer.GetStatsAsync();
         return Ok(new { ok = true, totalChunks = total, porProjeto = porProjeto });
     }
 

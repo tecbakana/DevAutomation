@@ -1,52 +1,71 @@
-using System.Text;
-using System.Text.Json;
-using System.Text.Json.Nodes;
+using Microsoft.Extensions.AI;
+using Qdrant.Client;
+using Qdrant.Client.Grpc;
 using DevAutomation.Models;
+using Microsoft.Extensions.Options;
 
 namespace DevAutomation.Services;
 
 public class RagService
 {
-    private readonly IHttpClientFactory _httpFactory;
+    private readonly IEmbeddingGenerator<string, Embedding<float>> _embedder;
+    private readonly QdrantClient _qdrant;
+    private readonly IOptions<OllamaSettings> _ollamaSettings;
     private readonly RagIndexerService _indexer;
     private readonly ILogger<RagService> _logger;
 
-    private const string OllamaUrl   = "http://localhost:11434/api/embeddings";
-    private const string OllamaModel = "nomic-embed-text";
-
-    public RagService(IHttpClientFactory httpFactory, RagIndexerService indexer, ILogger<RagService> logger)
+    public RagService(
+        IEmbeddingGenerator<string, Embedding<float>> embedder,
+        QdrantClient qdrant,
+        IOptions<OllamaSettings> ollamaSettings,
+        RagIndexerService indexer,
+        ILogger<RagService> logger)
     {
-        _httpFactory = httpFactory;
-        _indexer     = indexer;
-        _logger      = logger;
+        _embedder = embedder;
+        _qdrant   = qdrant;
+        _ollamaSettings = ollamaSettings;
+        _indexer  = indexer;
+        _logger   = logger;
     }
 
     public async Task<List<RagChunk>> QueryAsync(string texto, int topK = 5, string[]? filtrosProjeto = null)
     {
         if (!_indexer.IsReady)
         {
-            _logger.LogWarning("RagIndexerService ainda não está pronto — retornando lista vazia");
+            _logger.LogWarning("RagIndexerService ainda não está pronto");
             return [];
         }
 
         try
         {
-            var vetor = await GetEmbeddingAsync(texto);
+            var embeddingOptions = new EmbeddingGenerationOptions { AdditionalProperties = new() { ["num_ctx"] = _ollamaSettings.Value.NumCtx } };
+            var embeddingResult = await _embedder.GenerateAsync([texto], embeddingOptions);
+            var embedding = embeddingResult[0].Vector;
 
-            var (total, _) = _indexer.GetStats();
-            // Acessa os chunks via reflexão não é ideal; usamos o método público exposto pelo indexer
-            var chunks = GetChunks();
-
+            Filter? filter = null;
             if (filtrosProjeto is { Length: > 0 })
-                chunks = chunks.Where(c => filtrosProjeto.Contains(c.Projeto, StringComparer.OrdinalIgnoreCase)).ToList();
+            {
+                filter = new Filter();
+                filter.Should.AddRange(filtrosProjeto.Select(p => new Condition
+                {
+                    Field = new FieldCondition { Key = "projeto", Match = new Match { Text = p } }
+                }));
+            }
 
-            return chunks
-                .Select(c => (Chunk: c, Score: CosineSimilarity(vetor, c.Vetor)))
-                .Where(x => x.Score >= 0.5f)
-                .OrderByDescending(x => x.Score)
-                .Take(topK)
-                .Select(x => x.Chunk)
-                .ToList();
+            var results = await _qdrant.SearchAsync(
+                _indexer.CollectionName,
+                embedding.ToArray(),
+                filter: filter,
+                limit: (ulong)topK,
+                scoreThreshold: 0.2f);
+
+            return results.Select(r => new RagChunk
+            {
+                Conteudo = r.Payload.GetValueOrDefault("conteudo")?.StringValue ?? "",
+                Fonte    = r.Payload.GetValueOrDefault("fonte")?.StringValue    ?? "",
+                Projeto  = r.Payload.GetValueOrDefault("projeto")?.StringValue  ?? "",
+                Tipo     = r.Payload.GetValueOrDefault("tipo")?.StringValue     ?? ""
+            }).ToList();
         }
         catch (Exception ex)
         {
@@ -64,49 +83,20 @@ public class RagService
         var sb = new System.Text.StringBuilder();
         sb.AppendLine("--- CONTEXTO DO CODEBASE ---");
 
-        int usados = 0;
         for (int i = 0; i < chunks.Count; i++)
         {
-            var c = chunks[i];
-            var header  = $"[{i + 1}] Fonte: {c.Fonte} | Projeto: {c.Projeto}";
-            var espaco  = limiteTotal - sb.Length - header.Length - 4;
+            var c      = chunks[i];
+            var header = $"[{i + 1}] Fonte: {c.Fonte} | Projeto: {c.Projeto}";
+            var espaco = limiteTotal - sb.Length - header.Length - 4;
             if (espaco <= 0) break;
 
             var conteudo = c.Conteudo.Length <= espaco ? c.Conteudo : c.Conteudo[..espaco] + "...";
             sb.AppendLine(header);
             sb.AppendLine(conteudo);
             sb.AppendLine();
-            usados++;
         }
 
         sb.AppendLine("--- FIM DO CONTEXTO ---");
         return sb.ToString();
-    }
-
-    private List<RagChunk> GetChunks() => _indexer.GetChunks();
-
-    private async Task<float[]> GetEmbeddingAsync(string text)
-    {
-        var http = _httpFactory.CreateClient();
-        var body = JsonSerializer.Serialize(new { model = OllamaModel, prompt = text });
-        var resp = await http.PostAsync(OllamaUrl, new StringContent(body, Encoding.UTF8, "application/json"));
-        var raw  = await resp.Content.ReadAsStringAsync();
-        var doc  = JsonNode.Parse(raw);
-        var vals = doc?["embedding"]?.AsArray();
-        if (vals == null) throw new InvalidOperationException($"Resposta Ollama inválida: {raw}");
-        return [.. vals.Select(v => v!.GetValue<float>())];
-    }
-
-    private static float CosineSimilarity(float[] a, float[] b)
-    {
-        float dot = 0, magA = 0, magB = 0;
-        for (int i = 0; i < a.Length; i++)
-        {
-            dot  += a[i] * b[i];
-            magA += a[i] * a[i];
-            magB += b[i] * b[i];
-        }
-        var denom = MathF.Sqrt(magA) * MathF.Sqrt(magB);
-        return denom == 0 ? 0 : dot / denom;
     }
 }

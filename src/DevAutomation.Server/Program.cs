@@ -1,8 +1,15 @@
 using DevAutomation.Hubs;
+using DevAutomation.Models;
 using DevAutomation.Services;
+using Microsoft.Extensions.AI;
 using Microsoft.Extensions.FileProviders;
+using Microsoft.Extensions.Options;
+using OpenAI;
+using Qdrant.Client;
 using Serilog;
 using Swashbuckle.AspNetCore.SwaggerGen;
+using System.ClientModel;
+using OpenAI.Chat;
 
 // Detecta o diretório raiz do Forge independente do nome da pasta
 var searchDir = new DirectoryInfo(AppContext.BaseDirectory);
@@ -32,11 +39,44 @@ builder.Services.AddControllers();
 builder.Services.AddSignalR();
 builder.Services.AddSingleton<ConfigService>();
 builder.Services.AddHttpClient<GeminiService>();
+builder.Services.AddSingleton<QdrantClient>(_ => new QdrantClient("localhost", 6334));
+
+builder.Services.Configure<OllamaSettings>(
+    builder.Configuration.GetSection(OllamaSettings.SectionName));
+
+builder.Services.AddOptions<OllamaSettings>()
+    .Bind(builder.Configuration.GetSection(OllamaSettings.SectionName))
+    .ValidateDataAnnotations()
+    .ValidateOnStart();
+
+// Registro do Embedding Generator usando as Options
+builder.Services.AddSingleton<IEmbeddingGenerator<string, Embedding<float>>>(sp =>
+{
+    // Recupera as configurações injetadas
+    var settings = sp.GetRequiredService<IOptions<OllamaSettings>>().Value;
+
+    var client = new OllamaEmbeddingGenerator(
+        new Uri(settings.Endpoint),
+        settings.ModelName);
+
+    // Aqui você pode configurar filtros ou wrappers que usem o NumCtx se necessário
+    return client;
+});
+
+// No LM Studio, a key pode ser qualquer string, mas o client exige que não seja nula
+var lmStudioClient = new OpenAIClient(
+    new System.ClientModel.ApiKeyCredential("lm-studio"),
+    new OpenAIClientOptions { Endpoint = new Uri("http://localhost:1234/v1") }
+);
+
+// Agora registra usando o client configurado
+builder.Services.AddChatClient(lmStudioClient.AsChatClient("model-id"));
+builder.Services.AddEmbeddingGenerator(lmStudioClient.AsEmbeddingGenerator("nomic-embed-text"));
+
 builder.Services.AddSingleton<OrchestratorService>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<OrchestratorService>());
 builder.Services.AddSingleton<RagIndexerService>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<RagIndexerService>());
-builder.Services.AddHttpClient();
 builder.Services.AddSingleton<RagService>();
 builder.Services.AddSwaggerGen();
 
