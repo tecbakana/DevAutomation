@@ -1,0 +1,18 @@
+{
+  "id": "cmsx-pb2-undo-redo",
+  "api": "cmsx",
+  "tipo": "feature",
+  "impacto": "medio",
+  "descricao": "CMSX — PB2: undo/redo de ações no canvas",
+  "detalhes": "Adicionar histórico de estados (undo/redo) ao Page Builder v2. O usuário pode desfazer e refazer qualquer ação no canvas (mover bloco, redimensionar, adicionar, remover, editar conteúdo).\n\n## Implementação\n\n### Estratégia: snapshot de estado\n\nMais simples que command pattern para este caso — o estado do canvas é um array de `BlocoLayoutV2[]`, leve o suficiente para manter 20 snapshots em memória.\n\n```typescript\n// page-builder-v2.component.ts\nprivate historico: BlocoLayoutV2[][] = [];\nprivate historicoIndex = -1;\nprivate readonly MAX_HISTORICO = 20;\n\nprivate salvarSnapshot(): void {\n  // Descarta estados futuros ao fazer nova ação\n  this.historico = this.historico.slice(0, this.historicoIndex + 1);\n  this.historico.push(JSON.parse(JSON.stringify(this.blocos)));\n  if (this.historico.length > this.MAX_HISTORICO) {\n    this.historico.shift();\n  } else {\n    this.historicoIndex++;\n  }\n}\n\ndesfazer(): void {\n  if (this.historicoIndex > 0) {\n    this.historicoIndex--;\n    this.blocos = JSON.parse(JSON.stringify(this.historico[this.historicoIndex]));\n  }\n}\n\nrefazer(): void {\n  if (this.historicoIndex < this.historico.length - 1) {\n    this.historicoIndex++;\n    this.blocos = JSON.parse(JSON.stringify(this.historico[this.historicoIndex]));\n  }\n}\n```\n\n`salvarSnapshot()` deve ser chamado **antes** de cada mutação do array `blocos`:\n- Adicionar bloco (drop do catálogo)\n- Remover bloco\n- Mover bloco (fim do drag)\n- Redimensionar bloco (fim do resize)\n- Editar conteúdo (fechar modal de edição)\n\n### Atalhos de teclado\n\n```typescript\n@HostListener('document:keydown', ['$event'])\nonKeydown(event: KeyboardEvent): void {\n  if ((event.ctrlKey || event.metaKey) && event.key === 'z' && !event.shiftKey) {\n    event.preventDefault();\n    this.desfazer();\n  }\n  if ((event.ctrlKey || event.metaKey) && (event.key === 'y' || (event.key === 'z' && event.shiftKey))) {\n    event.preventDefault();\n    this.refazer();\n  }\n}\n```\n\n### UI\n\n- Botões `Desfazer` (Ctrl+Z) e `Refazer` (Ctrl+Y) na toolbar do canvas\n- Botões desabilitados quando não há histórico disponível\n- Tooltip mostrando o atalho\n\n### Inicialização\n\nAo carregar o layout do servidor, chamar `salvarSnapshot()` uma vez para registrar o estado inicial como ponto zero do histórico.",
+  "url_externa": null,
+  "status": "teste",
+  "impeditivo": false,
+  "resultado": null,
+  "prompt_agente": null,
+  "diretorio_alvo": "T:\\Developer\\RepositorioTrabalho\\tecbakana\\cmsx",
+  "timestamp": "2026-05-12T00:00:00Z",
+  "pendencias": null,
+  "resposta_usuario": null,
+  "timestamp_atualizacao": "2026-05-12T00:00:00Z"
+}

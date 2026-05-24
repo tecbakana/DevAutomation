@@ -1,0 +1,19 @@
+{
+  "id": "publica-1-public-token-model",
+  "api": "cmsx",
+  "tipo": "feature",
+  "impacto": "alto",
+  "descricao": "Entidade PublicToken \u2014 modelo, DbContext e script SQL",
+  "detalhes": "Criar a entidade PublicToken no projeto CMSXData e registr\u00E1-la no CmsxDbContext.\n\n**Arquivo novo:** \u0060T:\\Developer\\RepositorioTrabalho\\tecbakana\\cmsx\\CMSXData\\Models\\PublicToken.cs\u0060\n\n**Campos:**\n- PublicTokenId: Guid (PK)\n- Aplicacaoid: string (FK l\u00F3gica para Aplicacao)\n- Token: string (\u00FAnico, gerado externamente \u2014 n\u00E3o gerar aqui)\n- Ativo: bool (default true)\n- Datainclusao: DateTime\n- DataRevogacao: DateTime? (nullable)\n\n**DbContext:** \u0060T:\\Developer\\RepositorioTrabalho\\tecbakana\\cmsx\\CMSXData\\Models\\CmsxDbContext.cs\u0060\n- Adicionar: \u0060public virtual DbSet\u003CPublicToken\u003E PublicTokens { get; set; }\u0060\n- Configurar \u00EDndice \u00FAnico em Token via Fluent API no OnModelCreating\n\n**Script SQL:** criar arquivo \u0060T:\\Developer\\RepositorioTrabalho\\tecbakana\\cmsx\\sql\\create_public_token.sql\u0060 com:\n\u0060\u0060\u0060sql\nCREATE TABLE PublicToken (\n    PublicTokenId UNIQUEIDENTIFIER NOT NULL DEFAULT NEWID() PRIMARY KEY,\n    Aplicacaoid NVARCHAR(100) NOT NULL,\n    Token NVARCHAR(64) NOT NULL,\n    Ativo BIT NOT NULL DEFAULT 1,\n    Datainclusao DATETIME NOT NULL DEFAULT GETUTCDATE(),\n    DataRevogacao DATETIME NULL,\n    CONSTRAINT UQ_PublicToken_Token UNIQUE (Token)\n);\nCREATE INDEX IX_PublicToken_Aplicacaoid ON PublicToken (Aplicacaoid);\n\u0060\u0060\u0060\n\n**Observa\u00E7\u00F5es:**\n- N\u00E3o usar EF Migrations \u2014 projeto usa script SQL manual\n- Seguir o padr\u00E3o dos outros modelos em CMSXData/Models/ (properties com get; set;)\n- N\u00E3o criar controller nem endpoint nesta task",
+  "url_externa": null,
+  "status": "done",
+  "impeditivo": false,
+  "resultado": "Feito. Os tr\u00EAs artefatos:\n\n- **\u0060CMSXData/Models/PublicToken.cs\u0060** \u2014 entidade com \u0060PublicTokenId\u0060, \u0060Token\u0060, \u0060Aplicacaoid\u0060, \u0060Ativo\u0060, \u0060Datainclusao\u0060, \u0060Datavencimento\u0060\n- **\u0060CmsxDbContext.cs\u0060** \u2014 \u0060DbSet\u003CPublicToken\u003E PublicTokens\u0060 \u002B mapeamento com unique index em \u0060token\u0060 e index em \u0060aplicacaoid\u0060\n- **\u0060sql/migration_public_token.sql\u0060** \u2014 script SQL seguindo o mesmo padr\u00E3o dos scripts existentes\n\n\u0060Datavencimento\u0060 \u00E9 nullable para suportar tokens sem expira\u00E7\u00E3o. O unique constraint em \u0060token\u0060 \u00E9 aplicado tanto no \u00EDndice SQL quanto no mapeamento EF, garantindo consist\u00EAncia nas duas camadas.\n",
+  "prompt_agente": null,
+  "diretorio_alvo": "T:\\Developer\\RepositorioTrabalho\\tecbakana\\cmsx",
+  "timestamp": "2026-04-25T00:00:00Z",
+  "pendencias": null,
+  "resposta_usuario": null,
+  "comentarios_teste": null,
+  "timestamp_atualizacao": "2026-04-25T20:10:35.7123996Z"
+}

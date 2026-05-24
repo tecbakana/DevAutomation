@@ -1,0 +1,19 @@
+{
+  "id": "f7f080a0-1d8a-4857-a9fd-b9e88fe18495",
+  "api": "cmsx",
+  "tipo": "bugfix",
+  "impacto": "baixo",
+  "descricao": "Verificar CMSAPI e CMSAPI.Publica, CMSUI e PublicUI: orcamento",
+  "detalhes": "o link enviado para o vendedor gerar um or\u00E7amento estruturalmente est\u00E1 correto, por\u00E9m est\u00E1 dentro do ambiente admin, e n\u00E3o est\u00E1 carregando produtos, pois a api para isso est\u00E1 no ambiente publico, que n\u00E3o tem interface para orcamento novo",
+  "url_externa": null,
+  "status": "done",
+  "impeditivo": false,
+  "resultado": "## Verifica\u00E7\u00E3o: Orcamento (CMSAPI, CMSAPI.Publica, CMSUI, PublicUI)\n\n### **CMSAPI** (Admin API) \u2014 \u26A0\uFE0F Endpoints p\u00FAblicos ainda presentes\n\n| Aspecto | Status |\n|---|---|\n| **GET \u0060/Orcamentos/publico/produtos\u0060** | \u2705 Existe, mas usa \u0060ref\u0060 (antiga conven\u00E7\u00E3o) |\n| **POST \u0060/Orcamentos/publico\u0060** | \u2705 Existe, mas usa \u0060ref\u0060 (antiga conven\u00E7\u00E3o) |\n| **Rate Limiting** | \u274C Ausente |\n| **Reposit\u00F3rios** | \u2705 Usa \u0060IOrcamentoRepositorio\u0060 \u002B \u0060ILojaRepositorio\u0060 |\n| **Sanitiza\u00E7\u00E3o** | \u274C N\u00E3o h\u00E1 (\u0060Descricaoservico\u0060 salvo sem limite) |\n\n### **CMSAPI.Publica** (Nova API separada) \u2014 \u2705 Implementado corretamente\n\n| Aspecto | Status |\n|---|---|\n| **GET \u0060/api/publico/orcamento/produtos\u0060** | \u2705 Correto, usa \u0060token\u0060 querystring |\n| **POST \u0060/api/publico/orcamento\u0060** | \u2705 Correto, usa \u0060token\u0060 no body |\n| **Rate Limiting** | \u2705 \u0060[EnableRateLimiting(\u0022api_publica\u0022)]\u0060 habilitado |\n| **Sanitiza\u00E7\u00E3o** | \u2705 \u0060Descricaoservico\u0060 limitado a 2000 chars, trimado |\n| **DbContext** | \u26A0\uFE0F Acesso direto, sem reposit\u00F3rios (Fase 3 pendente) |\n\n### **CMSUI** (Admin UI) \u2014 \u26A0\uFE0F Aponta para endpoints antigos\n\n| Aspecto | Detalhe |\n|---|---|\n| **Querystring** | \u0060?ref=\u0060 (linha 62) |\n| **GET Produtos** | \u0060/orcamentos/publico/produtos?ref=\u0060 (linha 69) |\n| **POST Or\u00E7amento** | \u0060/orcamentos/publico\u0060 (linha 142) |\n| **Payload** | Usa \u0060ref\u0060 no body |\n\n### **PublicUI** (Nova UI p\u00FAblica) \u2014 \u2705 Correto\n\n| Aspecto | Detalhe |\n|---|---|\n| **Querystring** | \u0060?token=\u0060 (linha 62) |\n| **GET Produtos** | \u0060/api/publico/orcamento/produtos?token=\u0060 (linha 69) |\n| **POST Or\u00E7amento** | \u0060/api/publico/orcamento\u0060 (linha 142) |\n| **Payload** | Usa \u0060token\u0060 no body |\n\n### **Problemas identificados**\n\n1. **CMSUI ainda aponta para endpoints antigos** \u2014 \u0060/orcamentos/publico/\u0060 (CMSAPI) ao inv\u00E9s de \u0060/api/publico/orcamento/\u0060 (CMSAPI.Publica)\n2. **Duplica\u00E7\u00E3o de endpoints** \u2014 CMSAPI tem \u0060GET/POST /Orcamentos/publico/*\u0060 que deveriam ser removidos ap\u00F3s CMSUI migrar\n3. **Inconsist\u00EAncia de par\u00E2metro** \u2014 \u0060ref\u0060 vs \u0060token\u0060 entre as implementa\u00E7\u00F5es\n4. **CMSAPI.Publica acessa DbContext diretamente** \u2014 deveria usar reposit\u00F3rios (Fase 3)\n\n### **O que precisa ser feito**\n\n1. **Remover endpoints antigos** em CMSAPI (\u0060/Orcamentos/publico/*\u0060)\n2. **Migrar CMSUI** para apontar a \u0060/api/publico/orcamento/\u0060 (mudar \u0060ref\u0060 \u2192 \u0060token\u0060)\n3. **Implementar reposit\u00F3rios** para CMSAPI.Publica (Fase 3 do roadmap)\n",
+  "prompt_agente": null,
+  "diretorio_alvo": "T:\\Developer\\RepositorioTrabalho\\tecbakana",
+  "timestamp": "2026-04-26T15:45:45.0537384Z",
+  "pendencias": null,
+  "resposta_usuario": null,
+  "comentarios_teste": null,
+  "timestamp_atualizacao": "2026-04-26T15:53:05.0027936Z"
+}

@@ -1,0 +1,61 @@
+{
+  "id": "cmsx-publicui-site",
+  "api": "cmsx",
+  "tipo": "feature",
+  "impacto": "alto",
+  "descricao": "SitePublicoController no CMSAPI.Publica \u002B SiteComponent no PublicUI",
+  "detalhes": "Migrar renderiza\u00E7\u00E3o p\u00FAblica de p\u00E1ginas do SiteController (CMSAPI admin) para o CMSAPI.Publica \u002B PublicUI. Motiva\u00E7\u00E3o: CMSUI carrega JWT de admin e n\u00E3o deve servir tr\u00E1fego p\u00FAblico.\n\n## CMSAPI.Publica \u2014 SitePublicoController\n\n1. Criar \u0060CMSAPI.Publica/Controllers/SitePublicoController.cs\u0060\n   - \u0060[Route(\u0022api/publico\u0022)]\u0060, sem \u0060[Authorize]\u0060\n   - Injetar \u0060ISiteRepositorio\u0060 e \u0060IPublicTokenRepositorio\u0060 (j\u00E1 registrados no DI)\n\n2. Endpoint resolve slug \u2192 token:\n   \u0060\u0060\u0060\n   GET /api/publico/site/resolve?slug={slug}\n   \u0060\u0060\u0060\n   - Chama \u0060ISiteRepositorio.BuscaPorSlugAsync(slug)\u0060 para obter \u0060aplicacaoid\u0060\n   - Chama \u0060IPublicTokenRepositorio.BuscaPorAplicacaoAsync(aplicacaoid)\u0060 para obter o token ativo\n   - Retorna \u0060{ token: string }\u0060 \u2014 sem expor aplicacaoid\n   - 404 se slug n\u00E3o encontrado ou sem token gerado\n\n3. Endpoint principal:\n   \u0060\u0060\u0060\n   GET /api/publico/{token}/site\n   \u0060\u0060\u0060\n   - Resolve token \u2192 aplicacaoid via \u0060IPublicTokenRepositorio.ResolveAsync(token)\u0060 \u2192 404 se inv\u00E1lido\n   - Chama mesma l\u00F3gica de BuildSiteData do SiteController existente (ListaAreasAsync \u002B EnriquecerBloco)\n   - Retorna: \u0060{ nome, url, header, areas: [{ areaid, nome, url, temLayout, blocos }] }\u0060\n   - **N\u00C3O exp\u00F5e \u0060aplicacaoid\u0060 na resposta** \u2014 remover o campo do retorno\n\n4. Verificar se \u0060IPublicTokenRepositorio\u0060 tem \u0060BuscaPorAplicacaoAsync(string aplicacaoid)\u0060 \u2014 se n\u00E3o tiver, adicionar em \u0060ICMSX/IPublicTokenRepositorio.cs\u0060 e implementar em \u0060CMSXRepo/PublicTokenRepositorio.cs\u0060\n\n## PublicUI Angular \u2014 SitePublicoComponent\n\n1. Criar \u0060src/app/site/site-publico.component.ts\u0060 e \u0060.html\u0060\n   - No \u0060ngOnInit\u0060: extrair slug da rota, chamar \u0060/api/publico/site/resolve?slug=\u0060 para obter token, depois \u0060/api/publico/{token}/site\u0060\n   - Renderizar header como HTML via \u0060[innerHTML]\u0060 (sanitizado)\n   - Iterar areas; para cada \u00E1rea com \u0060temLayout=true\u0060, renderizar blocos via switch/case\n   - Blocos suportados (m\u00EDnimo): \u0060hero-cta\u0060, \u0060lista-produtos\u0060, \u0060lista-conteudos\u0060, \u0060rodape\u0060\n\n2. Registrar rotas no \u0060app.module.ts\u0060:\n   \u0060\u0060\u0060\n   { path: \u0027s/:slug\u0027, component: SitePublicoComponent }\n   { path: \u0027s/:slug/:areaurl\u0027, component: SitePublicoComponent }\n   \u0060\u0060\u0060\n   - Remover \u0060{ path: \u0027**\u0027, redirectTo: \u0027/loja\u0027 }\u0060 ou alterar para n\u00E3o conflitar\n\n## Regras obrigat\u00F3rias\n- SitePublicoController: n\u00E3o injetar \u0060CmsxDbContext\u0060 diretamente \u2014 usar ISiteRepositorio\n- N\u00E3o expor \u0060aplicacaoid\u0060 em nenhum endpoint ou resposta p\u00FAblica\n- Usar \u0060AsNoTracking()\u0060 em todas as queries do reposit\u00F3rio",
+  "url_externa": null,
+  "status": "done",
+  "impeditivo": false,
+  "resultado": "=== CAMADA: REPOSITORIO ===\r\nBuild limpo (warnings pr\u00E9-existentes, zero erros novos). Resumo do que foi entregue:\n\n**\u0060ICMSX/IPublicTokenRepositorio.cs\u0060**\n- \u0060BuscaPorAplicacaoAsync(string aplicacaoid) \u2192 Task\u003CPublicToken?\u003E\u0060 \u2014 token ativo mais recente por aplica\u00E7\u00E3o\n- \u0060ResolveAsync(string token) \u2192 Task\u003Cstring?\u003E\u0060 \u2014 resolve token opaco \u2192 \u0060aplicacaoid\u0060\n\n**\u0060CMSXRepo/PublicTokenRepositorio.cs\u0060**\n- Ambos implementados com \u0060AsNoTracking()\u0060, filtrando \u0060Ativo == true\u0060 e \u0060Datavencimento\u0060 n\u00E3o vencida\n- \u0060ResolveAsync\u0060 retorna apenas o campo necess\u00E1rio (\u0060Select(t =\u003E t.Aplicacaoid)\u0060) \u2014 sem carregar a entidade inteira\n\n**Nota:** A spec pedia \u0060BuscaPorAplicacaoAsync(Guid aplicacaoId)\u0060 mas o schema usa \u0060string Aplicacaoid\u0060 \u2014 mantive \u0060string\u0060 para evitar convers\u00E3o no \u0060IQueryable\u0060 (regra SARGability do CLAUDE.md). A camada Controller deve receber a string diretamente do slug resolve.\n\r\n\r\n=== CAMADA: API ===\r\nBuild limpo \u2014 zero erros, warnings s\u00E3o todos pr\u00E9-existentes no CMSXDAO legado.\n\n**Resumo do que foi criado:**\n\n**DTOs** (\u0060CMSAPI.Publica/Dtos/\u0060):\n- \u0060SitePublicoResponse\u0060 \u2014 \u0060{ Nome, Url, Header, Areas[] }\u0060 sem \u0060aplicacaoid\u0060\n- \u0060AreaPublicoResponse\u0060 \u2014 \u0060{ AreaId, Nome, Url, TemLayout, Blocos[] }\u0060\n- \u0060BlocoPublicoResponse\u0060 \u2014 \u0060{ Tipo, Config, Coluna, Dados }\u0060\n\n**Controller** (\u0060CMSAPI.Publica/Controllers/SitePublicoController.cs\u0060):\n- \u0060GET /api/publico/site/resolve?slug=\u0060 \u2192 resolve slug \u2192 token opaco (sem expor aplicacaoid)\n- \u0060GET /api/publico/{token}/site\u0060 \u2192 retorna site completo com \u00E1reas e blocos enriquecidos\n- Sem \u0060[Authorize]\u0060, com \u0060[EnableRateLimiting(\u0022api_publica\u0022)]\u0060\n\n**Corre\u00E7\u00E3o aplicada em rela\u00E7\u00E3o ao \u0060SiteController\u0060 original:** \u0060EnriquecerAsync\u0060 \u00E9 corretamente \u0060await\u0060ed dentro de um \u0060foreach\u0060 \u2014 no original os dados dos blocos ficavam como \u0060Task\u003Cobject?\u003E\u0060 n\u00E3o resolvidas no \u0060Select()\u0060.\n\n**Depend\u00EAncia extra necess\u00E1ria:** \u0060IAplicacaoRepositorio\u0060 foi adicionada ao construtor para buscar \u0060Nome/Url/Header\u0060 da aplica\u00E7\u00E3o a partir do \u0060aplicacaoid\u0060 resolvido pelo token \u2014 sem ela, o endpoint \u0060/site\u0060 n\u00E3o teria como preencher esses campos da resposta.\n\r\n\r\n=== CAMADA: FRONTEND ===\r\nFeito. Resumo do que foi criado:\n\n**\u0060PublicUI/ClientApp/src/app/site/site-publico.component.ts\u0060**\n- \u0060ngOnInit\u0060 extrai \u0060slug\u0060 e \u0060areaurl\u0060 da rota\n- Chama \u0060/api/publico/site/resolve?slug=...\u0060 \u2192 obt\u00E9m token\n- Chama \u0060/api/publico/{token}/site\u0060 \u2192 carrega dados do site\n- Toda a l\u00F3gica de layout (getLinhas, getColClass, getContador, getMenuNavegacao, getBlocosConteudo) portada do CMSUI sem \u0060BASE_URL\u0060 nem modo preview\n- \u0060navegarArea\u0060 usa \u0060/s/:slug/:area\u0060\n\n**\u0060PublicUI/ClientApp/src/app/site/site-publico.component.html\u0060**\n- Template id\u00EAntico ao CMSUI SiteComponent, removido o badge de preview\n- Links do menu usam \u0060[routerLink]=\u0022[\u0027/s\u0027, slug, area.url]\u0022\u0060 (sem refer\u00EAncia a \u0060previewId\u0060)\n- Todos os blocos suportados: hero, hero-cta, banner-imagem, contador, rodape, texto, imagem, lista-conteudos, lista-produtos, categorias, destaques, faq, formulario, video, prova-social\n\n**\u0060PublicUI/ClientApp/src/app/app.module.ts\u0060**\n- \u0060SitePublicoComponent\u0060 declarado e importado\n- Rotas \u0060s/:slug\u0060 e \u0060s/:slug/:areaurl\u0060 adicionadas **antes** do catch-all \u0060**\u0060 e **depois** de \u0060s/:slug/loja\u0060 (mais espec\u00EDfica), evitando conflito\n\r\n\r\n",
+  "prompt_agente": null,
+  "diretorio_alvo": "T:\\Developer\\RepositorioTrabalho\\tecbakana\\cmsx",
+  "timestamp": "2026-05-14T00:00:00Z",
+  "pendencias": null,
+  "resposta_usuario": null,
+  "comentarios_teste": null,
+  "timestamp_atualizacao": "2026-05-14T20:54:19.6552947Z",
+  "resultado_revisao": "You\u0027ve hit your limit \u00B7 resets 6:40pm (America/Sao_Paulo)\n",
+  "url_teste": null,
+  "consideracoes_refazer": null,
+  "contratos": {
+    "schema": {
+      "afetada": false,
+      "escopo": "",
+      "artefatos": [],
+      "expoe": ""
+    },
+    "repositorio": {
+      "afetada": true,
+      "escopo": "Implementar BuscaPorAplicacaoAsync em IPublicTokenRepositorio para buscar token por aplicacao; enriquecer ISiteRepositorio com BuscaPorSlugAsync se n\u00E3o existir; implementar m\u00E9todo de enriquecimento de blocos com renderiza\u00E7\u00E3o HTML; usar AsNoTracking em todas queries",
+      "artefatos": [
+        "ICMSX/IPublicTokenRepositorio.cs",
+        "CMSXRepo/PublicTokenRepositorio.cs",
+        "ICMSX/ISiteRepositorio.cs"
+      ],
+      "expoe": "IPublicTokenRepositorio: BuscaPorAplicacaoAsync(Guid aplicacaoId) \u2192 PublicToken; ResolveAsync(string token) \u2192 Guid aplicacaoId; ISiteRepositorio: BuscaPorSlugAsync(string slug) \u2192 Site; m\u00E9todo de enriquecimento blocos"
+    },
+    "api": {
+      "afetada": true,
+      "escopo": "Criar SitePublicoController em CMSAPI.Publica sem [Authorize]; implementar GET /api/publico/site/resolve?slug={slug} retornando token; implementar GET /api/publico/{token}/site retornando site completo com areas e blocos; criar DTOs (SitePublicoResponse, AreaPublicoResponse, BlocoPublicoResponse) sem expor aplicacaoid; injetar ISiteRepositorio e IPublicTokenRepositorio",
+      "artefatos": [
+        "CMSAPI.Publica/Controllers/SitePublicoController.cs",
+        "CMSAPI.Publica/Dtos/SitePublicoResponse.cs",
+        "CMSAPI.Publica/Dtos/AreaPublicoResponse.cs",
+        "CMSAPI.Publica/Dtos/BlocoPublicoResponse.cs"
+      ],
+      "expoe": "GET /api/publico/site/resolve?slug=... \u2192 {token: string}; GET /api/publico/{token}/site \u2192 {nome, url, header, areas: [{areaId, nome, url, temLayout, blocos: [{tipo, conteudo}]}]}"
+    },
+    "frontend": {
+      "afetada": true,
+      "escopo": "Criar SitePublicoComponent: extrair slug da rota no ngOnInit, chamar /api/publico/site/resolve para obter token, depois /api/publico/{token}/site; renderizar header via [innerHTML] sanitizado; iterar areas com temLayout=true e renderizar blocos (hero-cta, lista-produtos, lista-conteudos, rodape) via switch/case; registrar rotas s/:slug e s/:slug/:areaurl em app.module.ts; evitar conflito com catch-all redirect",
+      "artefatos": [
+        "CMSUI/ClientApp/src/app/site/site-publico.component.ts",
+        "CMSUI/ClientApp/src/app/site/site-publico.component.html",
+        "CMSUI/ClientApp/src/app/app.module.ts"
+      ],
+      "expoe": "Rota s/:slug que renderiza site p\u00FAblico por slug; suporta navega\u00E7\u00E3o s/:slug/:areaurl; componente exibe header HTML, areas com layout, blocos de conte\u00FAdo (hero-cta, lista-produtos, lista-conteudos, rodape)"
+    }
+  }
+}

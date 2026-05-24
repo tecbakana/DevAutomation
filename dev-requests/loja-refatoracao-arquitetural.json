@@ -1,0 +1,22 @@
+{
+  "id": "loja-refatoracao-arquitetural",
+  "api": "cmsx",
+  "tipo": "refatoracao",
+  "impacto": "alto",
+  "descricao": "LojaController — remover violações arquiteturais e extrair lógica de negócio para service",
+  "detalhes": "LojaController apresenta múltiplas violações do padrão ouro (ver CLAUDE.md).\n\n**Violações identificadas:**\n1. using CMSXData.Models no controller (linha 4)\n2. new Pedido { ... } construído no controller (linha 94)\n3. new ClienteLoja { ... } construído no controller (linha 68)\n4. ILojaRepositorio.CriaPedidoAsync(Pedido) toma entidade como parâmetro\n5. ILojaRepositorio.AtualizaStatusPedidoAsync(Pedido, ...) toma entidade como parâmetro\n6. dynamic ExpandoObject em MakeConnectionAsync — padrão DAL legado no controller\n\n**Lógica de negócio embutida no controller (requer extração):**\n- Publicação no Service Bus (publisher.PublicarPedidoAsync)\n- Fallback de status em caso de falha de publicação\n- Toda essa orquestração está dentro do endpoint CriarPedido — viola SRP\n\n**Escopo em duas fases:**\n\nFase 1 — DTOs e interfaces (baixo risco):\n- Criar PedidoInput em ICMSX (Aplicacaoid, Numeropedido, Clientenome, Clienteemail, Valorpedido, MetodoPagamento)\n- Criar ClienteLojaInput em ICMSX (Aplicacaoid, SalematicClienteId)\n- Atualizar ILojaRepositorio: CriaPedidoAsync(PedidoInput) → Task<Pedido>; AtualizaStatusPedidoAsync(Guid pedidoId, string status, string descricao)\n- Atualizar LojaRepositorio para construir entidades internamente\n- Remover using CMSXData.Models do controller\n\nFase 2 — Extração de service (médio risco, requer plano separado aprovado):\n- Criar IPedidoOrchestrationService em ICMSX\n- Mover lógica de publicação Service Bus + fallback para PedidoOrchestrationService\n- Controller delega ao service\n\n**Arquivos alvo:** ICMSX/ILojaRepositorio.cs, CMSXRepo/LojaRepositorio.cs, CMSAPI/Controllers/LojaController.cs",
+  "url_externa": null,
+  "status": "pendente",
+  "impeditivo": false,
+  "resultado": null,
+  "prompt_agente": null,
+  "diretorio_alvo": "T:\\Developer\\RepositorioTrabalho\\tecbakana\\cmsx",
+  "timestamp": "2026-05-10T00:00:00Z",
+  "pendencias": null,
+  "resposta_usuario": null,
+  "comentarios_teste": null,
+  "timestamp_atualizacao": "2026-05-10T00:00:00Z",
+  "resultado_revisao": null,
+  "url_teste": "/api/loja",
+  "consideracoes_refazer": null
+}

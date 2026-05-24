@@ -1,0 +1,19 @@
+{
+  "id": "ff0574ee-5661-4a39-aacd-04574428c865",
+  "api": "cmsx",
+  "tipo": "bugfix",
+  "impacto": "medio",
+  "descricao": "verificar o erro Cannot GET /orcamentos/publico/produtos",
+  "detalhes": "Ocorre ao carregar a tela de or\u00E7amento, n\u00E3o mostra os produtos cadastrados naquele tenant",
+  "url_externa": null,
+  "status": "done",
+  "impeditivo": false,
+  "resultado": "\u0060/orcamentos\u0060 estava faltando no proxy. Adicionado na linha 28. Reinicie o \u0060ng serve\u0060 para aplicar.\n",
+  "prompt_agente": null,
+  "diretorio_alvo": "T:\\Developer\\RepositorioTrabalho\\tecbakana\\cmsx",
+  "timestamp": "2026-04-25T03:11:06.9965321Z",
+  "pendencias": null,
+  "resposta_usuario": null,
+  "comentarios_teste": null,
+  "timestamp_atualizacao": "2026-04-25T03:22:41.2131453Z"
+}

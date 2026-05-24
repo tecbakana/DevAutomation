@@ -1,0 +1,22 @@
+{
+  "id": "cmsx-loja-controller-service-injection",
+  "api": "cmsx",
+  "tipo": "refactor",
+  "impacto": "baixo",
+  "descricao": "LojaController injeta SalematicHttpService (classe concreta) \u2014 viola arquitetura N-Tier",
+  "detalhes": "O teste Controllers_Devem_InjetarApenasInterfaces_OuTiposDoFramework falha com: \u0022LojaController injeta CMSAPI.Services.SalematicHttpService\u0022. SalematicHttpService \u00E9 uma classe concreta definida em CMSAPI/Services/, n\u00E3o uma interface. O teste exige que controllers injetem apenas interfaces (namespace ICMSX.) ou tipos do framework (Microsoft., System., Serilog., Azure.). Essa viola\u00E7\u00E3o \u00E9 pr\u00E9-existente \u2014 n\u00E3o foi introduzida pela refatora\u00E7\u00E3o das tasks de Site/Produtos/PageBuilder. A corre\u00E7\u00E3o exige: (1) extrair ISalematicHttpService como interface, (2) LojaController injetar a interface, (3) registrar ISalematicHttpService \u2192 SalematicHttpService no DI. Ambiguidade arquitetural: a interface deve ir em ICMSX (reposit\u00F3rio de dom\u00EDnio) ou permanecer em CMSAPI/Services (infraestrutura HTTP)? SalematicHttpService n\u00E3o \u00E9 um reposit\u00F3rio EF \u2014 \u00E9 um cliente HTTP externo. Aguarda decis\u00E3o do respons\u00E1vel sobre onde definir a interface antes de implementar.",
+  "url_externa": null,
+  "status": "done",
+  "impeditivo": false,
+  "resultado": "Correção já estava aplicada no commit 5dcbf40: ISalematicHttpService extraída em CMSAPI/Services/, LojaController injeta a interface, DI registrado via AddHttpClient<ISalematicHttpService, SalematicHttpService>. Teste de arquitetura permite CMSAPI.Services.I* desde a criação.",
+  "prompt_agente": "Corrigir viola\u00E7\u00E3o arquitetural no LojaController: SalematicHttpService \u00E9 injetado como classe concreta. Decis\u00E3o do respons\u00E1vel: Op\u00E7\u00E3o B.\n\nO QUE FAZER:\n1. Criar interface CMSAPI/Services/ISalematicHttpService.cs extraindo os m\u00E9todos p\u00FAblicos de SalematicHttpService\n2. Fazer SalematicHttpService implementar ISalematicHttpService\n3. Atualizar LojaController para injetar ISalematicHttpService (n\u00E3o a classe concreta)\n4. Atualizar o registro de DI para mapear ISalematicHttpService \u2192 SalematicHttpService\n5. Atualizar o teste de arquitetura Controllers_Devem_InjetarApenasInterfaces_OuTiposDoFramework para permitir tamb\u00E9m interfaces do namespace CMSAPI.Services.I* (apenas interfaces \u2014 n\u00E3o classes concretas)\n\nREGRAS:\n- N\u00E3o mover ISalematicHttpService para ICMSX \u2014 ela n\u00E3o \u00E9 um reposit\u00F3rio de dados\n- O teste atualizado deve continuar bloqueando inje\u00E7\u00E3o de classes concretas de qualquer namespace\n- N\u00E3o alterar nenhum outro controller ou servi\u00E7o fora do escopo\n\nTESTES OBRIGAT\u00D3RIOS ap\u00F3s implementar:\n  dotnet test CMSX.Tests/CMSX.Tests.csproj --filter \u0022Integration\u0022\n  dotnet test CMSX.Tests/CMSX.Tests.csproj --filter \u0022ControllerArchitecture\u0022\n\nS\u00F3 encerrar quando todos os testes de arquitetura passarem, incluindo o que antes falhava.",
+  "diretorio_alvo": "T:\\Developer\\RepositorioTrabalho\\tecbakana\\cmsx",
+  "timestamp": "2026-05-06T00:00:00Z",
+  "pendencias": null,
+  "resposta_usuario": "Op\u00E7\u00E3o B aprovada: ISalematicHttpService fica em CMSAPI/Services. Atualizar o teste de arquitetura para permitir CMSAPI.Services.I* (apenas interfaces, n\u00E3o classes concretas).",
+  "comentarios_teste": null,
+  "timestamp_atualizacao": "2026-05-06T11:16:16.5210027Z",
+  "resultado_revisao": null,
+  "url_teste": null,
+  "consideracoes_refazer": null
+}

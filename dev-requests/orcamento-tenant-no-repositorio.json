@@ -1,0 +1,53 @@
+{
+  "id": "orcamento-tenant-no-repositorio",
+  "api": "cmsx",
+  "tipo": "refatoracao",
+  "impacto": "medio",
+  "descricao": "OrcamentosController \u2014 mover valida\u00E7\u00E3o de tenant do controller para o reposit\u00F3rio",
+  "detalhes": "OrcamentosController valida o tenant no controller ap\u00F3s o fetch (GetById linha 58, Delete linha 118) em vez de no reposit\u00F3rio. Isso \u00E9 padr\u00E3o legado preservado na refatora\u00E7\u00E3o e viola a regra obrigat\u00F3ria do CLAUDE.md: \u0027Valida\u00E7\u00E3o de escopo de tenant dentro do reposit\u00F3rio, n\u00E3o no controller\u0027.\n\n**Problema atual (CMSAPI/Controllers/OrcamentosController.cs):**\n\u0060\u0060\u0060csharp\n// GetById: busca sem filtro de tenant, valida no controller depois do fetch\nvar orcamento = await _repo.BuscaPorIdAsync(id);\nif (orcamento == null) return NotFound();\nif (!acessoTotal \u0026\u0026 orcamento.Aplicacaoid != claimAppId) return Forbid();\n\u0060\u0060\u0060\n\n**Solu\u00E7\u00E3o esperada:** mover a valida\u00E7\u00E3o para dentro do reposit\u00F3rio. Duas abordagens aceit\u00E1veis:\n\n**Op\u00E7\u00E3o 1 \u2014 BuscaPorIdAsync com filtro opcional:**\n\u0060\u0060\u0060csharp\n// ICMSX\nTask\u003COrcamento?\u003E BuscaPorIdAsync(Guid id, string? aplicacaoid = null);\n\n// CMSXRepo \u2014 aplica filtro de tenant quando fornecido\npublic async Task\u003COrcamento?\u003E BuscaPorIdAsync(Guid id, string? aplicacaoid = null)\n{\n    var query = _db.Orcamentos.AsNoTracking().Where(o =\u003E o.Orcamentoid == id);\n    if (!string.IsNullOrEmpty(aplicacaoid))\n        query = query.Where(o =\u003E o.Aplicacaoid == aplicacaoid);\n    return await query.FirstOrDefaultAsync();\n}\n\n// Controller \u2014 n\u00E3o faz mais valida\u00E7\u00E3o de tenant\nvar aplicacaoidFiltro = acessoTotal ? null : claimAppId;\nvar orcamento = await _repo.BuscaPorIdAsync(id, aplicacaoidFiltro);\nif (orcamento == null) return NotFound(); // retorna 404 sem vazar se o id existe\n\u0060\u0060\u0060\n\n**Op\u00E7\u00E3o 2 \u2014 m\u00E9todo separado BuscaPorIdEAplicacaoAsync:**\n\u0060\u0060\u0060csharp\nTask\u003COrcamento?\u003E BuscaPorIdEAplicacaoAsync(Guid id, string aplicacaoid);\n\u0060\u0060\u0060\n\nEscolher a op\u00E7\u00E3o que melhor se encaixa no padr\u00E3o dos outros reposit\u00F3rios existentes.\n\n**Regras obrigat\u00F3rias:**\n- N\u00E3o expor o ID de outro tenant via 404 vs 403 diferenciados \u2014 retornar 404 para ambos os casos (n\u00E3o vazar exist\u00EAncia do recurso)\n- Manter async e AsNoTracking em todos os m\u00E9todos de leitura\n- Adaptar Delete com a mesma l\u00F3gica",
+  "url_externa": null,
+  "status": "done",
+  "impeditivo": false,
+  "resultado": "=== CAMADA: REPOSITORIO ===\r\nCamada de reposit\u00F3rio conclu\u00EDda. O contrato exposto para o controller:\n\n- \u0060BuscaPorIdAsync(Guid id, string? aplicacaoid = null)\u0060 \u2014 quando \u0060aplicacaoid\u0060 \u00E9 fornecido, o WHERE inclui \u0060o.Aplicacaoid == aplicacaoid\u0060; retorna \u0060null\u0060 tanto para recurso inexistente quanto para recurso de outro tenant (sem diferenciar).\n- \u0060RemoveAsync(Guid id, string? aplicacaoid = null)\u0060 \u2014 mesma l\u00F3gica; retorna \u0060false\u0060 se n\u00E3o encontrado ou tenant divergente, e o \u0060SaveChanges\u0060 s\u00F3 executa se o registro for confirmado.\n\nO controller dever\u00E1 passar \u0060acessoTotal ? null : claimAppId\u0060 nos dois m\u00E9todos e mapear \u0060null\u0060 \u2192 \u0060NotFound()\u0060 sem \u0060Forbid()\u0060.\n\r\n\r\n=== CAMADA: API ===\r\nFeito. Tr\u00EAs mudan\u00E7as aplicadas em \u0060OrcamentosController.cs\u0060:\n\n- **GetById**: passa \u0060aplicacaoidFiltro\u0060 para \u0060BuscaPorIdAsync\u0060; remove o \u0060Forbid()\u0060 p\u00F3s-fetch.\n- **Aprovar**: mesma corre\u00E7\u00E3o \u2014 o \u0060Forbid()\u0060 expunha exist\u00EAncia do recurso via 403 vs 404.\n- **Delete**: idem.\n\nO controller nunca mais toca em \u0060orcamento.Aplicacaoid\u0060 para validar tenant \u2014 isso \u00E9 responsabilidade do reposit\u00F3rio agora. Qualquer \u0060id\u0060 inv\u00E1lido ou de outro tenant resulta em \u0060404\u0060.\n\r\n\r\n",
+  "prompt_agente": null,
+  "diretorio_alvo": "T:\\Developer\\RepositorioTrabalho\\tecbakana\\cmsx",
+  "timestamp": "2026-05-10T00:00:00Z",
+  "pendencias": null,
+  "resposta_usuario": null,
+  "comentarios_teste": null,
+  "timestamp_atualizacao": "2026-05-14T19:52:28.5484279Z",
+  "resultado_revisao": "\u0060\u0060\u0060json\n{\n  \u0022aprovado\u0022: false,\n  \u0022resumo\u0022: \u0022GetById corretamente migrado \u2014 filtro de tenant delegado ao reposit\u00F3rio via BuscaPorIdAsync(id, aplicacaoidFiltro). Delete e Aprovar foram parcialmente migrados: a verifica\u00E7\u00E3o de posse usa BuscaPorIdAsync com filtro (correto), mas as opera\u00E7\u00F5es destrutivas subsequentes \u2014 RemoveAsync(id) e ToggleAprovadoAsync(id) \u2014 s\u00E3o chamadas sem o filtro de tenant, mantendo o padr\u00E3o legado de valida\u00E7\u00E3o-no-controller \u002B opera\u00E7\u00E3o-sem-escopo.\u0022,\n  \u0022url_teste\u0022: \u0022/orcamentos/{id}\u0022,\n  \u0022violacoes\u0022: [\n    {\n      \u0022regra\u0022: \u0022Valida\u00E7\u00E3o de escopo de tenant dentro do reposit\u00F3rio, n\u00E3o no controller\u0022,\n      \u0022arquivo\u0022: \u0022CMSAPI/Controllers/OrcamentosController.cs\u0022,\n      \u0022linha\u0022: 120,\n      \u0022encontrado\u0022: \u0022await _orcamentoRepo.RemoveAsync(id);\u0022,\n      \u0022esperado\u0022: \u0022var removido = await _orcamentoRepo.RemoveAsync(id, aplicacaoidFiltro);\\nif (!removido) return NotFound();\\nreturn NoContent(); // elimina o fetch pr\u00E9vio via BuscaPorIdAsync e usa o filtro que o reposit\u00F3rio j\u00E1 implementa corretamente\u0022\n    },\n    {\n      \u0022regra\u0022: \u0022Valida\u00E7\u00E3o de escopo de tenant dentro do reposit\u00F3rio, n\u00E3o no controller \u2014 Adaptar Delete com a mesma l\u00F3gica (spec literal)\u0022,\n      \u0022arquivo\u0022: \u0022CMSAPI/Controllers/OrcamentosController.cs\u0022,\n      \u0022linha\u0022: 117,\n      \u0022encontrado\u0022: \u0022var orcamento = await _orcamentoRepo.BuscaPorIdAsync(id, aplicacaoidFiltro);\\nif (orcamento == null) return NotFound();\\nawait _orcamentoRepo.RemoveAsync(id);\u0022,\n      \u0022esperado\u0022: \u0022IOrcamentoRepositorio.RemoveAsync(Guid id, string? aplicacaoid = null) foi corretamente estendida com o par\u00E2metro de tenant e o reposit\u00F3rio o aplica. O controller deve invocar RemoveAsync(id, aplicacaoidFiltro) diretamente, eliminando o fetch redundante e garantindo que a valida\u00E7\u00E3o de posse esteja na opera\u00E7\u00E3o destrutiva, n\u00E3o num pr\u00E9-check separado.\u0022\n    }\n  ],\n  \u0022avisos\u0022: [\n    {\n      \u0022tipo\u0022: \u0022infra_sem_testcontainers\u0022,\n      \u0022mensagem\u0022: \u0022OrcamentoRepositorio teve l\u00F3gica de tenant adicionada em BuscaPorIdAsync e RemoveAsync, mas n\u00E3o existe nenhum teste Testcontainers cobrindo esse reposit\u00F3rio. Os 26 testes aprovados cobrem apenas AplicacaoRepositorio e PublicTokenRepositorio. Cen\u00E1rios cr\u00EDticos sem cobertura: BuscaPorIdAsync retorna null quando aplicacaoid diverge; RemoveAsync retorna false (n\u00E3o remove) quando aplicacaoid n\u00E3o pertence ao tenant.\u0022,\n      \u0022arquivos\u0022: [\n        \u0022CMSXRepo/OrcamentoRepositorio.cs\u0022,\n        \u0022ICMSX/IOrcamentoRepositorio.cs\u0022\n      ]\n    },\n    {\n      \u0022tipo\u0022: \u0022outro\u0022,\n      \u0022mensagem\u0022: \u0022Aprovar (PUT /{id}/aprovar) repete o mesmo anti-padr\u00E3o: pr\u00E9-check com BuscaPorIdAsync(id, aplicacaoidFiltro) seguido de ToggleAprovadoAsync(id) sem filtro de tenant. ToggleAprovadoAsync n\u00E3o possui par\u00E2metro de tenant na interface \u2014 a spec n\u00E3o cobriu esse endpoint explicitamente, mas o risco estrutural \u00E9 id\u00EAntico ao Delete. Recomendado incluir no mesmo escopo de corre\u00E7\u00E3o: adicionar string? aplicacaoid = null em ToggleAprovadoAsync e eliminar o fetch redundante no controller.\u0022,\n      \u0022arquivos\u0022: [\n        \u0022CMSAPI/Controllers/OrcamentosController.cs\u0022,\n        \u0022ICMSX/IOrcamentoRepositorio.cs\u0022,\n        \u0022CMSXRepo/OrcamentoRepositorio.cs\u0022\n      ]\n    }\n  ]\n}\n\u0060\u0060\u0060\n",
+  "url_teste": "/orcamentos/{id}",
+  "consideracoes_refazer": null,
+  "contratos": {
+    "schema": {
+      "afetada": false,
+      "escopo": "",
+      "artefatos": [],
+      "expoe": ""
+    },
+    "repositorio": {
+      "afetada": true,
+      "escopo": "Modificar IOrcamentoRepositorio e OrcamentoRepositorio para deslocar valida\u00E7\u00E3o de tenant para dentro do reposit\u00F3rio (Op\u00E7\u00E3o 1: par\u00E2metro opcional). Adicionar aplicacaoid?: string em BuscaPorIdAsync que filtra por tenant quando fornecido. Aplicar mesma l\u00F3gica ao m\u00E9todo Delete. Usar AsNoTracking em leituras e manter async/await obrigat\u00F3rio. Retornar null se recurso n\u00E3o existe OU n\u00E3o pertence ao tenant (sin diferenciar via c\u00F3digo de erro).",
+      "artefatos": [
+        "ICMSX/Interfaces/IOrcamentoRepositorio.cs",
+        "CMSXRepo/OrcamentoRepositorio.cs"
+      ],
+      "expoe": "BuscaPorIdAsync(Guid id, string? aplicacaoid = null): Task\u003COrcamento?\u003E \u2014 null quando recurso n\u00E3o encontrado ou n\u00E3o pertence ao tenant. DeleteAsync: adaptar com mesmo padr\u00E3o de filtro opcional de tenant"
+    },
+    "api": {
+      "afetada": true,
+      "escopo": "Refatorar OrcamentosController.GetById (linha 58) e Delete (linha 118) para usar novo contrato de reposit\u00F3rio com filtro de tenant. Remover valida\u00E7\u00E3o manual p\u00F3s-fetch. Extrair acessoTotal e claimAppId das Claims, passar como aplicacaoid ao reposit\u00F3rio (null se acessoTotal, sen\u00E3o claimAppId). Retornar 404 para ambos os casos (n\u00E3o existe ou n\u00E3o autorizado). Manter tipos de retorno e status HTTP inalterados.",
+      "artefatos": [
+        "CMSAPI/Controllers/OrcamentosController.cs"
+      ],
+      "expoe": "GET /api/orcamentos/{id}: 200 (ok), 404 (not found ou forbidden). DELETE /api/orcamentos/{id}: 204 (deleted), 404 (not found ou forbidden). DTOs de entrada/sa\u00EDda mant\u00EAm-se id\u00EAnticos"
+    },
+    "frontend": {
+      "afetada": false,
+      "escopo": "",
+      "artefatos": [],
+      "expoe": ""
+    }
+  }
+}

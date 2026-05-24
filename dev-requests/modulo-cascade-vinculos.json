@@ -1,0 +1,52 @@
+{
+  "id": "modulo-cascade-vinculos",
+  "api": "cmsx",
+  "tipo": "bug",
+  "impacto": "medio",
+  "descricao": "ModuloRepositorio.RemoverAsync \u2014 remover v\u00EDnculos orf\u00E3os em Relmoduloaplicacaos e Relmodulousuarios",
+  "detalhes": "O m\u00E9todo RemoverAsync em CMSXRepo/ModuloRepositorio.cs remove o registro em Modulos mas n\u00E3o remove os registros relacionados em Relmoduloaplicacaos e Relmodulousuarios. Se o schema n\u00E3o tiver CASCADE DELETE configurado, esses registros ficam \u00F3rf\u00E3os silenciosamente.\n\n**Pr\u00E9-requisito:** verificar se as constraints de FK em Relmoduloaplicacaos e Relmodulousuarios t\u00EAm CASCADE DELETE configurado. Se tiverem, nenhuma a\u00E7\u00E3o de c\u00F3digo \u00E9 necess\u00E1ria \u2014 registrar a confirma\u00E7\u00E3o no resultado. Se n\u00E3o tiverem, implementar remo\u00E7\u00E3o expl\u00EDcita antes do Remove principal.\n\n**Arquivo alvo:** \u0060CMSXRepo/ModuloRepositorio.cs\u0060\n\n**Implementa\u00E7\u00E3o esperada (se n\u00E3o houver CASCADE):**\n\u0060\u0060\u0060csharp\npublic async Task\u003Cbool\u003E RemoverAsync(string id)\n{\n    var modulo = await _db.Modulos.FirstOrDefaultAsync(m =\u003E m.Moduloid == id);\n    if (modulo == null) return false;\n\n    var vinculosApp = _db.Relmoduloaplicacaos.Where(r =\u003E r.Moduloid == id);\n    var vinculosUsr = _db.Relmodulousuarios.Where(r =\u003E r.Moduloid == id);\n    _db.Relmoduloaplicacaos.RemoveRange(vinculosApp);\n    _db.Relmodulousuarios.RemoveRange(vinculosUsr);\n    _db.Modulos.Remove(modulo);\n    await _db.SaveChangesAsync();\n    return true;\n}\n\u0060\u0060\u0060\n\n**Regras obrigat\u00F3rias:**\n- Se CASCADE confirmado no schema: n\u00E3o alterar c\u00F3digo, registrar confirma\u00E7\u00E3o no resultado\n- Se CASCADE ausente: implementar RemoveRange antes do Remove principal, numa \u00FAnica transa\u00E7\u00E3o (SaveChangesAsync \u00FAnico)\n- N\u00E3o alterar a assinatura do m\u00E9todo nem a interface",
+  "url_externa": null,
+  "status": "done",
+  "impeditivo": false,
+  "resultado": "Diagn\u00F3stico conclu\u00EDdo.\n\n**Resultado da verifica\u00E7\u00E3o de CASCADE:**\n\nAs entidades \u0060Relmoduloaplicacao\u0060 e \u0060Relmodulousuario\u0060 no snapshot do modelo EF Core (\u0060CmsxDbContextModelSnapshot.cs\u0060, linhas 1862 e 1916) definem apenas \u0060HasKey\u0060 e \u0060ToTable\u0060 \u2014 **n\u00E3o h\u00E1 \u0060HasOne\u0060/\u0060WithMany\u0060/\u0060OnDelete\u0060 configurados**. Isso confirma que **CASCADE DELETE est\u00E1 ausente** no schema EF, tanto para \u0060Relmoduloaplicacaos\u0060 quanto para \u0060Relmodulousuarios\u0060.\n\n**Status da implementa\u00E7\u00E3o:**\n\nO diff (\u0060git diff HEAD\u0060) confirma que as 4 linhas de \u0060RemoveRange\u0060 j\u00E1 foram adicionadas ao working tree (\u00E9 o \u0060M ModuloRepositorio.cs\u0060 do git status inicial). A implementa\u00E7\u00E3o est\u00E1 correta e id\u00EAntica \u00E0 spec:\n\n- \u0060vinculosApp\u0060 e \u0060vinculosUsr\u0060 s\u00E3o deletados via \u0060RemoveRange\u0060 antes do \u0060Remove(modulo)\u0060\n- Um \u00FAnico \u0060SaveChangesAsync()\u0060 \u2014 opera\u00E7\u00E3o at\u00F4mica\n- Assinatura do m\u00E9todo inalterada (\u0060Task\u003Cbool\u003E RemoverAsync(string id)\u0060)\n\n**Nenhuma altera\u00E7\u00E3o adicional necess\u00E1ria.** A task est\u00E1 completa \u2014 o c\u00F3digo no working tree j\u00E1 resolve o problema de registros \u00F3rf\u00E3os.\n",
+  "prompt_agente": null,
+  "diretorio_alvo": "T:\\Developer\\RepositorioTrabalho\\tecbakana\\cmsx\\CMSXRepo",
+  "timestamp": "2026-05-10T00:00:00Z",
+  "pendencias": null,
+  "dependencias": null,
+  "bloqueado": false,
+  "resposta_usuario": null,
+  "comentarios_teste": null,
+  "timestamp_atualizacao": "2026-05-24T03:27:27.5425403Z",
+  "resultado_revisao": "\u0060\u0060\u0060json\n{\n  \u0022aprovado\u0022: true,\n  \u0022resumo\u0022: \u0022RemoverAsync implementado conforme spec: RemoveRange em Relmoduloaplicacaos e Relmodulousuarios antes do Remove principal, \u00FAnica chamada a SaveChangesAsync garantindo atomicidade. Sem viola\u00E7\u00E3o de camada, sem altera\u00E7\u00E3o de assinatura ou interface.\u0022,\n  \u0022url_teste\u0022: null,\n  \u0022violacoes\u0022: [],\n  \u0022avisos\u0022: [\n    {\n      \u0022tipo\u0022: \u0022infra_sem_testcontainers\u0022,\n      \u0022mensagem\u0022: \u0022Altera\u00E7\u00E3o em CMSXRepo/ModuloRepositorio.cs sem cobertura por testes de integra\u00E7\u00E3o (Testcontainers). O caminho cr\u00EDtico \u2014 remo\u00E7\u00E3o de v\u00EDnculos orf\u00E3os antes da entidade principal \u2014 n\u00E3o foi validado contra banco real. Uma constraint de FK sem CASCADE e sem o RemoveRange causaria falha silenciosa em produ\u00E7\u00E3o; o teste deveria provar que o cen\u00E1rio com v\u00EDnculos existentes completa sem exce\u00E7\u00E3o.\u0022,\n      \u0022arquivos\u0022: [\u0022CMSXRepo/ModuloRepositorio.cs\u0022]\n    },\n    {\n      \u0022tipo\u0022: \u0022cascade_orfao\u0022,\n      \u0022mensagem\u0022: \u0022A spec exige verifica\u00E7\u00E3o pr\u00E9via de CASCADE DELETE no schema antes de implementar RemoveRange. N\u00E3o h\u00E1 evid\u00EAncia no diff nem no resultado de que essa verifica\u00E7\u00E3o foi realizada (migration inspecionada, script SQL consultado, etc.). A implementa\u00E7\u00E3o est\u00E1 correta para o caso sem CASCADE, mas a confirma\u00E7\u00E3o do estado real do schema ficou pendente \u2014 se CASCADE estiver configurado, o RemoveRange \u00E9 redundante por\u00E9m inofensivo; se n\u00E3o estiver, a aus\u00EAncia teria sido o bug. Registrar a confirma\u00E7\u00E3o formal \u00E9 obriga\u00E7\u00E3o da spec.\u0022,\n      \u0022arquivos\u0022: [\u0022CMSXRepo/ModuloRepositorio.cs\u0022]\n    }\n  ]\n}\n\u0060\u0060\u0060\n",
+  "url_teste": null,
+  "consideracoes_refazer": null,
+  "contratos": {
+    "schema": {
+      "afetada": false,
+      "escopo": "Sem a\u00E7\u00E3o necess\u00E1ria. N\u00E3o h\u00E1 HasForeignKey configurado no Fluent API para Relmoduloaplicacao\u2192Modulos nem para Relmodulousuario\u2192Modulos. O \u00FAnico OnDelete expl\u00EDcito encontrado no contexto \u00E9 DeleteBehavior.Restrict em outra entidade (linha 734). Adicionar CASCADE via migration seria alternativa v\u00E1lida mas n\u00E3o foi o caminho escolhido \u2014 a remo\u00E7\u00E3o expl\u00EDcita no reposit\u00F3rio \u00E9 suficiente e menos invasiva.",
+      "artefatos": [],
+      "expoe": ""
+    },
+    "repositorio": {
+      "afetada": true,
+      "escopo": "RemoverAsync j\u00E1 corrigido no working tree (git diff confirmado). Adicionadas duas chamadas RemoveRange antes do Remove principal: uma para Relmoduloaplicacaos e outra para Relmodulousuarios, filtrando por Moduloid. Tudo dentro de um \u00FAnico SaveChangesAsync \u2014 transa\u00E7\u00E3o at\u00F4mica garantida pelo EF Core. Assinatura do m\u00E9todo e interface IModuloRepositorio inalteradas.",
+      "artefatos": [
+        "CMSXRepo/ModuloRepositorio.cs"
+      ],
+      "expoe": "Task\u003Cbool\u003E RemoverAsync(string id) \u2014 comportamento id\u00EAntico ao contrato anterior; efeito colateral corrigido: v\u00EDnculos \u00F3rf\u00E3os n\u00E3o s\u00E3o mais gerados."
+    },
+    "api": {
+      "afetada": false,
+      "escopo": "Nenhuma altera\u00E7\u00E3o. O controller que chama RemoverAsync n\u00E3o precisa ser modificado \u2014 a corre\u00E7\u00E3o \u00E9 transparente para a camada de apresenta\u00E7\u00E3o.",
+      "artefatos": [],
+      "expoe": ""
+    },
+    "frontend": {
+      "afetada": false,
+      "escopo": "",
+      "artefatos": [],
+      "expoe": ""
+    }
+  }
+}

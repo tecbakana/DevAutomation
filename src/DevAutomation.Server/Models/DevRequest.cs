@@ -28,7 +28,7 @@ public class DevRequest
 
     [JsonPropertyName("status")]
     public string Status { get; set; } = "pendente";
-    // pendente | aguardando_aprovacao | in_progress | impeditivo | done | error | cancelado
+    // pendente | aguardando_aprovacao | in_progress | impeditivo | revisao_reprovada | revisao_amarela | em_testes | done | error | cancelado
 
     [JsonPropertyName("impeditivo")]
     public bool Impeditivo { get; set; } = false;
@@ -48,6 +48,12 @@ public class DevRequest
     [JsonPropertyName("pendencias")]
     public string? Pendencias { get; set; }
 
+    [JsonPropertyName("dependencias")]
+    public List<string>? Dependencias { get; set; }
+
+    [JsonPropertyName("bloqueado")]
+    public bool Bloqueado { get; set; }
+
     [JsonPropertyName("resposta_usuario")]
     public string? RespostaUsuario { get; set; }
 
@@ -56,4 +62,16 @@ public class DevRequest
 
     [JsonPropertyName("timestamp_atualizacao")]
     public DateTime? TimestampAtualizacao { get; set; }
+
+    [JsonPropertyName("resultado_revisao")]
+    public string? ResultadoRevisao { get; set; }
+
+    [JsonPropertyName("url_teste")]
+    public string? UrlTeste { get; set; }
+
+    [JsonPropertyName("consideracoes_refazer")]
+    public string? ConsideracoesRefazer { get; set; }
+
+    [JsonPropertyName("contratos")]
+    public ContratosCamada? Contratos { get; set; }
 }

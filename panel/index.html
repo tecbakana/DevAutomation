@@ -599,9 +599,33 @@ body {
 .kanban-col-header.col-done         { background: var(--green-light); color: var(--green); }
 .kanban-col-header.col-error        { background: var(--red-light); color: var(--red); }
 .kanban-col-header.col-testes       { background: #f0f9ff; color: #0369a1; }
+.kanban-col-header.col-revisao      { background: #fff7ed; color: #c2410c; }
+.kanban-col-header.col-amarela      { background: var(--yellow-light); color: var(--yellow); }
 .kanban-col-header.col-cancelado    { background: var(--surface2); color: var(--muted); border: 1px solid var(--border); }
-html[data-theme="dark"] .kanban-col-header.col-testes { background: #0369a118; color: #38bdf8; }
-.devreq-card.em_testes { border-left: 3px solid #0369a1; }
+html[data-theme="dark"] .kanban-col-header.col-testes  { background: #0369a118; color: #38bdf8; }
+html[data-theme="dark"] .kanban-col-header.col-revisao { background: #43140718; color: #fb923c; }
+html[data-theme="dark"] .kanban-col-header.col-amarela { background: var(--yellow-light); color: var(--yellow); }
+.devreq-card.em_testes         { border-left: 3px solid #0369a1; }
+.devreq-card.revisao_reprovada { border-left: 3px solid #c2410c; }
+.devreq-card.revisao_amarela   { border-left: 3px solid var(--yellow); }
+.teste-link { display:block; font-size:11px; color:var(--accent); margin-bottom:6px; text-decoration:none; font-family:var(--mono); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.teste-link:hover { text-decoration:underline; }
+.aviso-block  { margin-top: 8px; background: var(--yellow-light); border-radius: 6px; padding: 10px 12px; }
+.aviso-header { font-size: 11px; font-weight: 600; color: var(--yellow); margin-bottom: 6px; text-transform: uppercase; letter-spacing: .04em; }
+.aviso-item   { background: var(--surface); border: 1px solid var(--border); border-radius: 4px; padding: 8px 10px; margin-bottom: 6px; font-size: 12px; }
+.aviso-item:last-child { margin-bottom: 0; }
+.aviso-msg    { color: var(--text-2); margin-bottom: 4px; }
+.aviso-files  { color: var(--muted); font-family: var(--mono); font-size: 11px; }
+.revisao-block  { margin-top: 8px; background: var(--red-light); border-radius: 6px; padding: 10px 12px; }
+.revisao-header { font-size: 11px; font-weight: 600; color: var(--red); margin-bottom: 6px; text-transform: uppercase; letter-spacing: .04em; }
+.revisao-resumo { font-size: 12px; color: var(--text-2); margin-bottom: 8px; font-style: italic; }
+.revisao-violacao          { background: var(--surface); border: 1px solid var(--border); border-radius: 4px; padding: 8px 10px; margin-bottom: 6px; font-size: 12px; }
+.revisao-violacao:last-child{ margin-bottom: 0; }
+.revisao-regra  { font-weight: 600; color: var(--red); margin-bottom: 4px; }
+.revisao-arquivo{ color: var(--muted); font-family: var(--mono); font-size: 11px; margin-bottom: 4px; }
+.revisao-diff   { font-family: var(--mono); font-size: 11px; display: flex; flex-direction: column; gap: 2px; }
+.revisao-diff .found    { color: var(--red);   background: var(--red-light);   padding: 2px 6px; border-radius: 3px; }
+.revisao-diff .expected { color: var(--green); background: var(--green-light); padding: 2px 6px; border-radius: 3px; }
 .testes-comentario { margin-top: 8px; width: 100%; font-size: 12px; font-family: var(--sans); border: 1px solid var(--border); border-radius: 4px; padding: 6px 8px; background: var(--surface2); color: var(--text); resize: vertical; min-height: 52px; }
 .testes-actions { display: flex; gap: 6px; margin-top: 6px; }
 .btn-refazer { font-size: 11px; padding: 4px 10px; border-radius: 4px; border: 1px solid var(--red); color: var(--red); background: transparent; cursor: pointer; }
@@ -661,6 +685,19 @@ html[data-theme="dark"] .kanban-col-header.col-impeditivo  { background: #431407
   font-size: 11px;
   color: var(--yellow);
   font-weight: 500;
+}
+
+.devreq-card.bloqueado {
+  opacity: 0.45;
+  border-left-style: dashed;
+  pointer-events: auto;
+}
+.devreq-card.bloqueado:hover { opacity: 0.65; box-shadow: none; }
+.devreq-bloqueado-hint {
+  font-size: 11px;
+  color: var(--muted);
+  font-style: italic;
+  margin-top: 2px;
 }
 
 .devreq-resultado {
@@ -1710,6 +1747,10 @@ select option { background: var(--surface); }
     <div class="nav-item" data-view="rag" onclick="navigate('rag', this)">
       <span class="nav-icon">🔍</span> RAG
     </div>
+    <div class="nav-separator"></div>
+    <div class="nav-item" onclick="alert('fui clicado')">
+      <span class="nav-icon">✓</span> Teste
+    </div>
   </nav>
 
   <div class="sidebar-footer">
@@ -1806,7 +1847,10 @@ select option { background: var(--surface); }
       <!-- APIs cadastradas -->
       <div class="flex items-center justify-between">
         <div class="section-label" style="margin:0">APIs Cadastradas</div>
-        <button class="btn btn-ghost btn-sm" onclick="toggleRegisterForm()" id="btn-register">+ Cadastrar</button>
+        <div class="flex gap-8">
+          <button class="btn btn-ghost btn-sm" onclick="openDiscoverModal()">Descobrir</button>
+          <button class="btn btn-ghost btn-sm" onclick="toggleRegisterForm()" id="btn-register">+ Cadastrar</button>
+        </div>
       </div>
 
       <div class="register-card" id="register-form">
@@ -1958,6 +2002,28 @@ select option { background: var(--surface); }
             <span class="col-count" id="kcount-testes">0</span>
           </div>
           <div class="kanban-col-body" id="kcol-testes">
+            <div class="kanban-empty">Sem itens</div>
+          </div>
+        </div>
+        <!-- Revisão Reprovada -->
+        <div class="kanban-col">
+          <div class="kanban-col-header col-revisao">
+            <span class="col-dot" style="background:#c2410c"></span>
+            Revisão
+            <span class="col-count" id="kcount-revisao">0</span>
+          </div>
+          <div class="kanban-col-body" id="kcol-revisao">
+            <div class="kanban-empty">Sem itens</div>
+          </div>
+        </div>
+        <!-- Atenção (revisão amarela) -->
+        <div class="kanban-col">
+          <div class="kanban-col-header col-amarela">
+            <span class="col-dot" style="background:var(--yellow)"></span>
+            Atenção
+            <span class="col-count" id="kcount-amarela">0</span>
+          </div>
+          <div class="kanban-col-body" id="kcol-amarela">
             <div class="kanban-empty">Sem itens</div>
           </div>
         </div>
@@ -2131,6 +2197,59 @@ select option { background: var(--surface); }
 
 <!-- TOAST -->
 <div class="toast-container" id="toast-container"></div>
+
+<!-- MODAL: DESCOBRIR PROJETO -->
+<div class="modal-overlay" id="modal-discover" onclick="if(event.target===this) closeDiscoverModal()">
+  <div class="modal-box">
+    <div class="modal-header">
+      <span class="modal-title">Descobrir Projeto</span>
+      <button class="modal-close" onclick="closeDiscoverModal()">✕</button>
+    </div>
+    <div class="modal-form-grid">
+      <div class="form-group full">
+        <label class="form-label">Caminho da solução ou repositório</label>
+        <div class="form-row">
+          <input class="form-input" id="disc-path" type="text" placeholder="T:\Dev\MinhaSolution" />
+          <button class="btn btn-ghost btn-sm" onclick="browseFolder('disc-path')">...</button>
+        </div>
+      </div>
+      <div class="form-group full" style="text-align:right">
+        <button class="btn btn-primary btn-sm" onclick="runDiscover()">Descobrir</button>
+      </div>
+
+      <div id="disc-preview" style="display:none; grid-column:1/-1">
+        <hr style="border:none;border-top:1px solid var(--border);margin:8px 0 16px">
+        <div class="card-title" style="margin-bottom:12px">Configuração detectada</div>
+        <div class="form-grid">
+          <div class="form-group full">
+            <label class="form-label">Nome</label>
+            <input class="form-input" id="disc-name" type="text" />
+          </div>
+          <div class="form-group full">
+            <label class="form-label">Repositório Git</label>
+            <input class="form-input" id="disc-gitrepo" type="text" readonly style="opacity:.7" />
+          </div>
+          <div class="form-group full">
+            <label class="form-label">Solution (.sln)</label>
+            <input class="form-input" id="disc-sln" type="text" />
+          </div>
+          <div class="form-group full">
+            <label class="form-label">URL do browser</label>
+            <input class="form-input" id="disc-browserurl" type="text" placeholder="https://localhost:44455" />
+          </div>
+          <div class="form-group full">
+            <label class="form-label">Alvos de inicialização detectados</label>
+            <div id="disc-runtargets" style="font-size:12px;font-family:var(--mono);color:var(--text-2);background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:10px;white-space:pre-wrap"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost btn-sm" onclick="closeDiscoverModal()">Cancelar</button>
+      <button class="btn btn-primary btn-sm" id="disc-confirm-btn" style="display:none" onclick="confirmDiscover()">Cadastrar</button>
+    </div>
+  </div>
+</div>
 
 <!-- MODAL: EDITAR API -->
 <div class="modal-overlay" id="modal-edit-api" onclick="if(event.target===this) closeEditApiModal()">
@@ -2310,6 +2429,23 @@ select option { background: var(--surface); }
 </div>
 
 <!-- MODAL: DETALHE DEV REQUEST -->
+<div class="modal-overlay" id="modal-refazer" onclick="if(event.target===this) closeRefazerModal()" style="z-index:1100">
+  <div class="modal-box" style="max-width:480px;gap:14px">
+    <div class="modal-header">
+      <span class="modal-title">Refazer implementação</span>
+      <button class="modal-close" onclick="closeRefazerModal()">✕</button>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:8px">
+      <label style="font-size:13px;color:var(--text-2)">Considerações para o agente <span style="color:var(--muted)">(opcional)</span></label>
+      <textarea id="refazer-consideracoes" rows="5" placeholder="Descreva o que estava errado e o que deve ser corrigido..." style="width:100%;resize:vertical;font-family:var(--mono);font-size:13px;padding:10px;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface2);color:var(--text)"></textarea>
+    </div>
+    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:4px">
+      <button class="btn btn-ghost btn-sm" onclick="closeRefazerModal()">Cancelar</button>
+      <button class="btn btn-sm" onclick="confirmarRefazer()" style="background:#c2410c;color:#fff">Confirmar Refazer</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="modal-devreq-detail" onclick="if(event.target===this) closeDevReqModal()">
   <div class="modal-box" style="max-width:680px;gap:14px">
     <div class="modal-header">
@@ -2326,6 +2462,10 @@ select option { background: var(--surface); }
     <div id="drd-section-resultado" class="drd-section" style="display:none">
       <div class="form-label">Resultado</div>
       <div id="drd-resultado" class="devreq-resultado"></div>
+    </div>
+    <div id="drd-section-revisao" class="drd-section" style="display:none">
+      <div class="form-label" style="color:#c2410c">Revisão Automática (Opus)</div>
+      <div id="drd-revisao"></div>
     </div>
     <div id="drd-section-pendencias" class="drd-section" style="display:none">
       <div class="form-label" style="color:var(--yellow)">Pendências do agente</div>
@@ -2657,6 +2797,8 @@ function renderKanban(arr) {
       inprogress: arr.filter(i => i.status === 'in_progress'),
       impeditivo: arr.filter(i => i.status === 'impeditivo'),
       testes:     arr.filter(i => i.status === 'em_testes'),
+      revisao:    arr.filter(i => i.status === 'revisao_reprovada'),
+      amarela:    arr.filter(i => i.status === 'revisao_amarela'),
       done:       arr.filter(i => i.status === 'done' || i.status === 'concluido'),
       error:      arr.filter(i => i.status === 'error'),
       cancelado:  arr.filter(i => i.status === 'cancelado'),
@@ -2670,21 +2812,73 @@ function renderKanban(arr) {
 
     const renderCard = (item) => {
       const st = item.status;
+      const bloqueado = item.bloqueado === true;
       const impactColor = item.impacto === 'baixo' ? 'var(--green)' : item.impacto === 'medio' ? 'var(--yellow)' : 'var(--red)';
       const idShort = item.id.length > 8 ? item.id.substring(0, 8) : item.id;
       const pendenciaHint = item.pendencias
         ? `<div class="devreq-pendencia-hint">pendência do agente</div>`
         : '';
+      const bloqueadoHint = bloqueado
+        ? `<div class="devreq-bloqueado-hint">na fila — aguardando: ${(item.dependencias || []).join(', ')}</div>`
+        : '';
 
-      const testesBlock = st === 'em_testes' ? `
+      const testesBlock = st === 'em_testes' ? (() => {
+        const apiCfg   = config?.apis?.find(a => a.name === item.api);
+        const testeUrl = item.url_teste && apiCfg?.browserUrl
+          ? apiCfg.browserUrl.replace(/\/$/, '') + item.url_teste
+          : null;
+        const testeLinkHtml = testeUrl
+          ? `<a class="teste-link" href="${testeUrl}" target="_blank" onclick="event.stopPropagation()" title="${testeUrl}">Testar: ${item.url_teste}</a>`
+          : '';
+        return `${testeLinkHtml}
         <textarea class="testes-comentario" id="tc-${item.id}" placeholder="Comentários sobre os testes..." onclick="event.stopPropagation()">${item.comentarios_teste || ''}</textarea>
         <div class="testes-actions" onclick="event.stopPropagation()">
           <button class="btn-aprovar-testes" onclick="aprovarTestes('${item.id}')">Aprovar</button>
           <button class="btn-refazer" onclick="refazerDevReq('${item.id}')">Refazer</button>
-        </div>` : '';
+        </div>`;
+      })() : '';
+
+      const revisaoBlock = (() => {
+        if (st !== 'revisao_reprovada' || !item.resultado_revisao) return '';
+        try {
+          const rev = JSON.parse(item.resultado_revisao);
+          const viols = (rev.violacoes || []).slice(0, 2);
+          const extra = (rev.violacoes?.length || 0) - viols.length;
+          return `<div class="revisao-block" onclick="event.stopPropagation();openDevReqModal('${item.id}')">
+            <div class="revisao-header">Revisão reprovada &mdash; ${rev.violacoes?.length || 0} violação${rev.violacoes?.length !== 1 ? 'ões' : ''}</div>
+            ${rev.resumo ? `<div class="revisao-resumo">${rev.resumo}</div>` : ''}
+            ${viols.map(v => `<div class="revisao-violacao">
+              <div class="revisao-regra">${v.regra || ''}</div>
+              <div class="revisao-arquivo">${v.arquivo || ''}${v.linha ? ':' + v.linha : ''}</div>
+              <div class="revisao-diff">
+                <span class="found">&minus; ${v.encontrado || ''}</span>
+                <span class="expected">&plus; ${v.esperado || ''}</span>
+              </div>
+            </div>`).join('')}
+            ${extra > 0 ? `<div style="font-size:11px;color:var(--muted);margin-top:4px">+${extra} violação${extra !== 1 ? 'ões' : ''} — abra o card para ver tudo</div>` : ''}
+          </div>`;
+        } catch { return ''; }
+      })();
+
+      const avisoBlock = (() => {
+        if (st !== 'revisao_amarela' || !item.resultado_revisao) return '';
+        try {
+          const rev = JSON.parse(item.resultado_revisao);
+          const avisos = (rev.avisos || []).slice(0, 2);
+          const extra  = (rev.avisos?.length || 0) - avisos.length;
+          return `<div class="aviso-block" onclick="event.stopPropagation();openDevReqModal('${item.id}')">
+            <div class="aviso-header">Atenção &mdash; ${rev.avisos?.length || 0} aviso${rev.avisos?.length !== 1 ? 's' : ''}</div>
+            ${avisos.map(a => `<div class="aviso-item">
+              <div class="aviso-msg">${a.mensagem || ''}</div>
+              ${(a.arquivos || []).length ? `<div class="aviso-files">${a.arquivos.join(', ')}</div>` : ''}
+            </div>`).join('')}
+            ${extra > 0 ? `<div style="font-size:11px;color:var(--muted);margin-top:4px">+${extra} aviso${extra !== 1 ? 's' : ''} — abra o card</div>` : ''}
+          </div>`;
+        } catch { return ''; }
+      })();
 
       return `
-        <div class="devreq-card impacto-${item.impacto}${st === 'cancelado' ? ' cancelado' : ''}${st === 'impeditivo' ? ' impeditivo' : ''}${st === 'em_testes' ? ' em_testes' : ''}" id="devreq-${item.id}" onclick="openDevReqModal('${item.id}')">
+        <div class="devreq-card impacto-${item.impacto}${st === 'cancelado' ? ' cancelado' : ''}${st === 'impeditivo' ? ' impeditivo' : ''}${st === 'em_testes' ? ' em_testes' : ''}${st === 'revisao_reprovada' ? ' revisao_reprovada' : ''}${st === 'revisao_amarela' ? ' revisao_amarela' : ''}${bloqueado ? ' bloqueado' : ''}" id="devreq-${item.id}" onclick="openDevReqModal('${item.id}')">
           <div class="devreq-meta">
             <span class="devreq-tag">${item.api}</span>
             <span class="devreq-tag">${item.tipo}</span>
@@ -2693,7 +2887,10 @@ function renderKanban(arr) {
           </div>
           <div class="devreq-desc">${item.descricao || ''}</div>
           ${pendenciaHint}
-          ${testesBlock}
+          ${bloqueadoHint}
+          ${bloqueado ? '' : testesBlock}
+          ${bloqueado ? '' : revisaoBlock}
+          ${bloqueado ? '' : avisoBlock}
           <div class="devreq-time">${new Date(item.timestamp).toLocaleString('pt-BR')}</div>
         </div>`;
     };
@@ -2802,6 +2999,47 @@ function openDevReqModal(id) {
     secResultado.style.display = 'none';
   }
 
+  const secRevisao = document.getElementById('drd-section-revisao');
+  if (item.resultado_revisao) {
+    secRevisao.style.display = '';
+    const revisaoEl = document.getElementById('drd-revisao');
+    try {
+      const rev = JSON.parse(item.resultado_revisao);
+      const statusColor = rev.aprovado
+        ? ((rev.avisos || []).length > 0 ? 'var(--yellow)' : 'var(--green)')
+        : '#c2410c';
+      const statusLabel = rev.aprovado
+        ? ((rev.avisos || []).length > 0 ? 'Aprovado com atenção' : 'Aprovado')
+        : 'Reprovado';
+      const aprovadoLabel = `<div style="color:${statusColor};font-weight:600;margin-bottom:8px">${statusLabel}</div>`;
+      const resumoHtml = rev.resumo
+        ? `<div class="revisao-resumo" style="margin-bottom:10px">${rev.resumo}</div>`
+        : '';
+      const violsHtml = (rev.violacoes || []).map(v => `
+        <div class="revisao-violacao">
+          <div class="revisao-regra">${v.regra || ''}</div>
+          <div class="revisao-arquivo">${v.arquivo || ''}${v.linha ? ':' + v.linha : ''}</div>
+          <div class="revisao-diff">
+            <span class="found">&minus; ${v.encontrado || ''}</span>
+            <span class="expected">&plus; ${v.esperado || ''}</span>
+          </div>
+        </div>`).join('');
+      const avisosHtml = (rev.avisos || []).map(a => `
+        <div class="aviso-item" style="margin-bottom:6px">
+          <div class="aviso-msg"><strong>${a.tipo || 'aviso'}</strong> — ${a.mensagem || ''}</div>
+          ${(a.arquivos || []).length ? `<div class="aviso-files">${a.arquivos.join(', ')}</div>` : ''}
+        </div>`).join('');
+      const avisosSection = avisosHtml
+        ? `<div class="aviso-block" style="margin-top:8px"><div class="aviso-header">Avisos</div>${avisosHtml}</div>`
+        : '';
+      revisaoEl.innerHTML = aprovadoLabel + resumoHtml + violsHtml + avisosSection;
+    } catch {
+      revisaoEl.textContent = item.resultado_revisao;
+    }
+  } else {
+    secRevisao.style.display = 'none';
+  }
+
   const secPendencias = document.getElementById('drd-section-pendencias');
   if (item.status === 'impeditivo' || item.pendencias) {
     secPendencias.style.display = '';
@@ -2823,7 +3061,10 @@ function openDevReqModal(id) {
 
   const st = item.status;
   let actions = '';
-  if (st === 'aguardando_aprovacao' || st === 'pendente' || st === 'pending' || st === 'backlog') {
+  if (item.bloqueado) {
+    const deps = (item.dependencias || []).join(', ');
+    actions = `<span style="font-size:12px;color:var(--muted);font-style:italic">Aguardando conclusão de: ${deps}</span>`;
+  } else if (st === 'aguardando_aprovacao' || st === 'pendente' || st === 'pending' || st === 'backlog') {
     actions = `<button class="btn btn-primary btn-sm" onclick="devRequestAction('${item.id}','${item.api}','aprovar');closeDevReqModal()" style="background:var(--yellow);color:#000">Aprovar</button>
                <button class="btn btn-ghost btn-sm" onclick="devRequestAction('${item.id}','${item.api}','cancelar');closeDevReqModal()" style="color:var(--muted)">Cancelar</button>
                <button class="btn btn-ghost btn-sm" onclick="devRequestAction('${item.id}','${item.api}','ignorar');closeDevReqModal()">Ignorar</button>`;
@@ -2835,7 +3076,14 @@ function openDevReqModal(id) {
                <button class="btn btn-ghost btn-sm" onclick="devRequestAction('${item.id}','${item.api}','cancelar');closeDevReqModal()" style="color:var(--muted)">Cancelar</button>`;
   } else if (st === 'em_testes') {
     actions = `<button class="btn btn-primary btn-sm" onclick="aprovarTestes('${item.id}');closeDevReqModal()" style="background:var(--green);color:#fff">Aprovar Testes</button>
-               <button class="btn btn-ghost btn-sm" onclick="refazerDevReq('${item.id}');closeDevReqModal()" style="color:var(--red)">Refazer</button>`;
+               <button class="btn btn-ghost btn-sm" onclick="refazerDevReq('${item.id}')" style="color:var(--red)">Refazer</button>`;
+  } else if (st === 'revisao_reprovada') {
+    actions = `<button class="btn btn-primary btn-sm" onclick="refazerDevReq('${item.id}')" style="background:#c2410c;color:#fff">Refazer</button>
+               <button class="btn btn-ghost btn-sm" onclick="devRequestAction('${item.id}','${item.api}','cancelar');closeDevReqModal()" style="color:var(--muted)">Cancelar</button>`;
+  } else if (st === 'revisao_amarela') {
+    actions = `<button class="btn btn-primary btn-sm" onclick="devRequestAction('${item.id}','${item.api}','aceitar_aviso');closeDevReqModal()" style="background:var(--yellow);color:#000">Aceitar e testar</button>
+               <button class="btn btn-ghost btn-sm" onclick="refazerDevReq('${item.id}')" style="color:var(--red)">Refazer</button>
+               <button class="btn btn-ghost btn-sm" onclick="devRequestAction('${item.id}','${item.api}','cancelar');closeDevReqModal()" style="color:var(--muted)">Cancelar</button>`;
   } else if (st === 'error') {
     actions = `<button class="btn btn-ghost btn-sm" onclick="devRequestAction('${item.id}','${item.api}','implementar');closeDevReqModal()">Retentar</button>
                <button class="btn btn-ghost btn-sm" onclick="devRequestAction('${item.id}','${item.api}','cancelar');closeDevReqModal()" style="color:var(--muted)">Cancelar</button>
@@ -2868,17 +3116,31 @@ async function aprovarTestes(id) {
   showToast('Implementação aprovada — concluída.', 'success');
 }
 
-async function refazerDevReq(id) {
+let _refazerId = null;
+function refazerDevReq(id) {
+  _refazerId = id;
+  document.getElementById('refazer-consideracoes').value = '';
+  closeDevReqModal();
+  document.getElementById('modal-refazer').classList.add('show');
+}
+function closeRefazerModal() {
+  document.getElementById('modal-refazer').classList.remove('show');
+  _refazerId = null;
+}
+async function confirmarRefazer() {
+  const id = _refazerId;
+  if (!id) return;
   const item = devReqsCache.find(i => i.id === id);
   if (!item) return;
-  const comentario = document.getElementById(`tc-${id}`)?.value || '';
-  if (comentario) {
+  const consideracoes = document.getElementById('refazer-consideracoes').value.trim();
+  if (consideracoes) {
     await fetch(`${API_BASE}/devrequests/${id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ comentarios_teste: comentario })
+      body: JSON.stringify({ consideracoes_refazer: consideracoes })
     });
   }
+  closeRefazerModal();
   await devRequestAction(id, item.api, 'refazer');
   showToast('Dev Request enviada para refatoração.', 'warning');
 }
@@ -3202,6 +3464,75 @@ async function saveTemplate() {
 // =============================================================================
 // APPS
 // =============================================================================
+
+let _discoverData = null;
+
+function openDiscoverModal() {
+  document.getElementById('disc-path').value = '';
+  document.getElementById('disc-preview').style.display = 'none';
+  document.getElementById('disc-confirm-btn').style.display = 'none';
+  _discoverData = null;
+  document.getElementById('modal-discover').classList.add('show');
+}
+
+function closeDiscoverModal() {
+  document.getElementById('modal-discover').classList.remove('show');
+}
+
+async function runDiscover() {
+  const path = document.getElementById('disc-path').value.trim();
+  if (!path) { showToast('Informe um caminho.', 'error'); return; }
+  try {
+    const res  = await fetch(`${API_BASE}/projects/discover`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path })
+    });
+    const data = await res.json();
+    if (!res.ok) { showToast(data.error || 'Falha ao descobrir.', 'error'); return; }
+    _discoverData = data;
+    document.getElementById('disc-name').value       = data.name       ?? '';
+    document.getElementById('disc-gitrepo').value    = data.gitRepo    ?? '';
+    document.getElementById('disc-sln').value        = data.solutionPath ?? '';
+    document.getElementById('disc-browserurl').value = data.browserUrl ?? '';
+    const rtEl = document.getElementById('disc-runtargets');
+    rtEl.textContent = data.runTargets?.length
+      ? data.runTargets.map(r => `${r.name}  →  ${r.dir}\n  $ ${r.command}`).join('\n\n')
+      : '(nenhum detectado)';
+    document.getElementById('disc-preview').style.display = '';
+    document.getElementById('disc-confirm-btn').style.display = '';
+  } catch(e) { showToast('Erro: ' + e.message, 'error'); }
+}
+
+async function confirmDiscover() {
+  if (!_discoverData) return;
+  const nome = document.getElementById('disc-name').value.trim();
+  if (!nome) { showToast('Nome obrigatório.', 'error'); return; }
+  const body = {
+    name:         nome,
+    configType:   'json',
+    configFile:   '',
+    gitRepo:      document.getElementById('disc-gitrepo').value.trim(),
+    solutionPath: document.getElementById('disc-sln').value.trim(),
+    browserUrl:   document.getElementById('disc-browserurl').value.trim(),
+    desktop:      1,
+    runTargets:   _discoverData.runTargets ?? []
+  };
+  try {
+    const res    = await fetch(`${API_BASE}/apps/register`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    const result = await res.json();
+    if (result.success) {
+      showToast(`"${nome}" cadastrada com sucesso!`, 'success');
+      closeDiscoverModal();
+      await loadConfig();
+    } else {
+      showToast('Erro: ' + (result.error ?? 'Desconhecido'), 'error');
+    }
+  } catch(e) { showToast('Erro: ' + e.message, 'error'); }
+}
+
 function toggleRegisterForm() {
   const form = document.getElementById('register-form');
   form.classList.toggle('open');
@@ -3210,14 +3541,18 @@ function toggleRegisterForm() {
 }
 
 async function browseFolder(inputId) {
-  const res = await fetch('/api/browse?type=folder').then(r => r.json());
-  if (res.path) document.getElementById(inputId).value = res.path;
+  try {
+    const res = await fetch('/api/browse?type=folder').then(r => r.json());
+    if (res.path) document.getElementById(inputId).value = res.path;
+  } catch(e) { showToast('Não foi possível abrir o seletor de pasta.', 'error'); }
 }
 
 async function browseFile(inputId, filter) {
-  const url = '/api/browse?type=file' + (filter ? '&filter=' + encodeURIComponent(filter) : '');
-  const res = await fetch(url).then(r => r.json());
-  if (res.path) document.getElementById(inputId).value = res.path;
+  try {
+    const url = '/api/browse?type=file' + (filter ? '&filter=' + encodeURIComponent(filter) : '');
+    const res = await fetch(url).then(r => r.json());
+    if (res.path) document.getElementById(inputId).value = res.path;
+  } catch(e) { showToast('Não foi possível abrir o seletor de arquivo.', 'error'); }
 }
 
 async function registerApp() {
@@ -3227,17 +3562,17 @@ async function registerApp() {
   const gitRepo    = document.getElementById('reg-gitrepo').value.trim();
   const sln        = document.getElementById('reg-sln').value.trim();
   const desktop    = parseInt(document.getElementById('reg-desktop').value) || 1;
-  if (!nome || !configFile || !gitRepo || !sln) { showToast('Preencha todos os campos.', 'info'); return; }
-  const runTargets = collectRunTargets('reg-runtargets');
+  if (!nome || !configFile || !gitRepo || !sln) { showToast('Preencha todos os campos obrigatórios.', 'info'); return; }
   try {
+    const runTargets = collectRunTargets('reg-runtargets');
     const res = await fetch(`${API_BASE}/apps/register`, {
       method: 'POST', headers: {'Content-Type':'application/json'},
       body: JSON.stringify({ name: nome, configType, configFile, gitRepo, solutionPath: sln, desktop, runTargets })
     });
     const result = await res.json();
-    if (result.success) { showToast(`"${nome}" cadastrada!`, 'success'); toggleRegisterForm(); await loadConfig(); }
-    else showToast('Erro: ' + result.error, 'error');
-  } catch(e) { showToast('Falha: ' + e.message, 'error'); }
+    if (result.success) { showToast(`"${nome}" cadastrada com sucesso!`, 'success'); toggleRegisterForm(); await loadConfig(); }
+    else showToast('Erro ao cadastrar: ' + (result.error ?? 'Erro desconhecido'), 'error');
+  } catch(e) { console.error('[registerApp]', e); showToast('Falha na comunicação com o servidor: ' + e.message, 'error'); }
 }
 
 async function unregisterApp(nome) {
@@ -3323,29 +3658,30 @@ function closeEditApiModal() {
 
 async function saveEditApi() {
   const nome = document.getElementById('edit-api-name').value;
-  const body = {
-    name:         nome,
-    configType:   document.getElementById('edit-configtype').value,
-    configFile:   document.getElementById('edit-configfile').value.trim(),
-    gitRepo:      document.getElementById('edit-gitrepo').value.trim(),
-    solutionPath: document.getElementById('edit-sln').value.trim(),
-    desktop:      parseInt(document.getElementById('edit-desktop').value) || 1,
-    runTargets:   collectRunTargets('edit-runtargets')
-  };
+  if (!nome) { showToast('Erro interno: nome da API não identificado.', 'error'); return; }
   try {
+    const body = {
+      name:         nome,
+      configType:   document.getElementById('edit-configtype').value,
+      configFile:   document.getElementById('edit-configfile').value.trim(),
+      gitRepo:      document.getElementById('edit-gitrepo').value.trim(),
+      solutionPath: document.getElementById('edit-sln').value.trim(),
+      desktop:      parseInt(document.getElementById('edit-desktop').value) || 1,
+      runTargets:   collectRunTargets('edit-runtargets')
+    };
     const res = await fetch(`${API_BASE}/apps/update`, {
       method: 'POST', headers: {'Content-Type':'application/json'},
       body: JSON.stringify(body)
     });
     const result = await res.json();
     if (result.success) {
-      showToast(`"${nome}" atualizada.`, 'success');
+      showToast(`"${nome}" atualizada com sucesso.`, 'success');
       closeEditApiModal();
       await loadConfig();
     } else {
-      showToast('Erro: ' + result.error, 'error');
+      showToast('Erro ao salvar: ' + (result.error ?? 'Erro desconhecido'), 'error');
     }
-  } catch(e) { showToast('Falha: ' + e.message, 'error'); }
+  } catch(e) { showToast('Falha na comunicação com o servidor: ' + e.message, 'error'); }
 }
 
 // =============================================================================
@@ -3907,8 +4243,8 @@ function initSignalR() {
 
   hubConnection.on('devRequestUpdate', (request) => {
     loadDevRequests(); // atualiza o painel quando orquestrador muda status
-    const statusLabel = { pending: 'pendente', in_progress: 'em andamento', done: 'concluído', error: 'erro' };
-    const type = request.status === 'done' ? 'success' : request.status === 'error' ? 'error' : 'info';
+    const statusLabel = { pending: 'pendente', in_progress: 'em andamento', done: 'concluído', error: 'erro', revisao_reprovada: 'revisão reprovada', revisao_amarela: 'atenção — revisar avisos', em_testes: 'em testes' };
+    const type = request.status === 'done' ? 'success' : request.status === 'error' || request.status === 'revisao_reprovada' ? 'error' : request.status === 'revisao_amarela' ? 'warning' : 'info';
     log(`[Orquestrador] ${request.api}: ${statusLabel[request.status] || request.status} — ${request.descricao?.substring(0,60)}`, type);
   });
 

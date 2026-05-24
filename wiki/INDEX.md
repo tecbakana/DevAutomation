@@ -36,7 +36,7 @@
 
 | Arquivo | Tipo | Descrição |
 |---|---|---|
-| *(em construção)* | | |
+| [forge-devrequests-rules.md](forge/forge-devrequests-rules.md) | rules | Regras para execução de dev-requests — impeditivo quando falta JSON de contrato |
 
 ---
 

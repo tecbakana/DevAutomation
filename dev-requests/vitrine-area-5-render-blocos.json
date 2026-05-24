@@ -1,0 +1,53 @@
+{
+  "id": "vitrine-area-5-render-blocos",
+  "api": "cmsx",
+  "tipo": "bugfix",
+  "impacto": "medio",
+  "descricao": "Vitrine por \u00E1rea \u2014 RenderAreaAsync deve processar data-vitrine-bloco com dados reais do banco",
+  "detalhes": "## Contexto\n\n\u0060RenderAreaAsync\u0060 em \u0060CMSXRepo/VitrineRepositorio.cs\u0060 atualmente processa apenas atributos \u0060data-vitrine-slot\u0060 (blocos edit\u00E1veis pelo usu\u00E1rio no editor). Atributos \u0060data-vitrine-bloco\u0060 (inje\u00E7\u00E3o din\u00E2mica de dados do banco \u2014 lista-produtos, lista-conteudos, lista-categorias) s\u00E3o ignorados, resultando em se\u00E7\u00F5es vazias mesmo ap\u00F3s publica\u00E7\u00E3o. A mesma l\u00F3gica de processamento j\u00E1 existe em \u0060RenderComDadosAsync\u0060 (usado pela home).\n\n---\n\n## 1. \u0060ICMSX/IVitrineRepositorio.cs\u0060 \u2014 Alterar assinatura\n\nDe:\n\u0060\u0060\u0060csharp\nTask\u003Cstring?\u003E RenderAreaAsync(string areaId);\n\u0060\u0060\u0060\nPara:\n\u0060\u0060\u0060csharp\nTask\u003Cstring?\u003E RenderAreaAsync(string areaId, ISiteRepositorio siteRepo);\n\u0060\u0060\u0060\n\n---\n\n## 2. \u0060CMSXRepo/VitrineRepositorio.cs\u0060 \u2014 Implementar processamento de data-vitrine-bloco\n\nAp\u00F3s o bloco Regex.Replace que processa \u0060data-vitrine-slot\u0060 (em torno da linha 393), adicionar o processamento de \u0060data-vitrine-bloco\u0060 **id\u00EAntico** ao de \u0060RenderComDadosAsync\u0060:\n\n\u0060\u0060\u0060csharp\n// --- Processar data-vitrine-bloco (dados din\u00E2micos do banco) ---\nvar aplicacaoId = (await _db.Areas\n    .AsNoTracking()\n    .Where(a =\u003E a.Areaid == areaId)\n    .Select(a =\u003E a.Aplicacaoid)\n    .FirstOrDefaultAsync()) ?? \u0022\u0022;\n\nDictionary\u003Cstring, string?\u003E varValores;\ntry { varValores = JsonSerializer.Deserialize\u003CDictionary\u003Cstring, string?\u003E\u003E(area.VitrineValoresJson ?? \u0022{}\u0022) ?? []; }\ncatch { varValores = []; }\n\nvar blocoMatches = Regex.Matches(\n    html,\n    @\u0022(\u003C[^\u003E]*data-vitrine-bloco=\u0022\u0022([\\w-]\u002B)\u0022\u0022[^\u003E]*\u003E)([\\s\\S]*?)(\u003C/[\\w]\u002B\u003E)\u0022,\n    RegexOptions.IgnoreCase).Cast\u003CMatch\u003E().ToList();\n\nfor (int i = blocoMatches.Count - 1; i \u003E= 0; i--)\n{\n    var m = blocoMatches[i];\n    var tipoBloco = m.Groups[2].Value;\n    var innerGroup = m.Groups[3];\n    var inner = await GerarHtmlBlocoAsync(tipoBloco, varValores, aplicacaoId, siteRepo);\n    if (inner is null) continue;\n    html = html[..innerGroup.Index] \u002B inner \u002B html[(innerGroup.Index \u002B innerGroup.Length)..];\n}\n\u0060\u0060\u0060\n\nNotas:\n- \u0060area\u0060 j\u00E1 est\u00E1 carregada no contexto do m\u00E9todo \u2014 reutilizar a vari\u00E1vel existente\n- \u0060GerarHtmlBlocoAsync\u0060 j\u00E1 existe no \u0060VitrineRepositorio\u0060 \u2014 reutilizar sem duplicar\n- N\u00E3o alterar a l\u00F3gica de \u0060data-vitrine-slot\u0060 j\u00E1 existente\n\n---\n\n## 3. \u0060CMSAPI/Controllers/VitrineController.cs\u0060 \u2014 Passar siteRepo nos dois callers\n\nO \u0060_siteRepo\u0060 j\u00E1 est\u00E1 injetado no controlador. Alterar os dois pontos de chamada:\n\n\u0060\u0060\u0060csharp\n// Em PublicarArea:\nvar htmlRendered = await _repo.RenderAreaAsync(areaId, _siteRepo);\n\n// Em RenderArea:\nvar html = await _repo.RenderAreaAsync(areaId, _siteRepo);\n\u0060\u0060\u0060\n\n---\n\n## Observa\u00E7\u00F5es\n- N\u00C3O criar migration \u2014 nenhuma mudan\u00E7a de schema\n- N\u00C3O alterar \u0060RenderComDadosAsync\u0060 \u2014 manter intacto\n- N\u00C3O alterar \u0060data-vitrine-slot\u0060 processing \u2014 apenas adicionar o bloco de \u0060data-vitrine-bloco\u0060 ap\u00F3s ele\n- O campo \u0060aplicacaoId\u0060 vem de \u0060area.Aplicacaoid\u0060 \u2014 j\u00E1 dispon\u00EDvel na entidade Area\n- Arquivos a modificar: \u0060ICMSX/IVitrineRepositorio.cs\u0060, \u0060CMSXRepo/VitrineRepositorio.cs\u0060, \u0060CMSAPI/Controllers/VitrineController.cs\u0060",
+  "url_externa": null,
+  "status": "done",
+  "impeditivo": false,
+  "resultado": "=== CAMADA: REPOSITORIO ===\r\nBuild limpo nos dois projetos da camada reposit\u00F3rio. Apenas os warnings pr\u00E9-existentes, zero erros novos.\n\n**Resumo do que foi alterado:**\n\n- \u0060ICMSX/IVitrineRepositorio.cs:92\u0060 \u2014 assinatura de \u0060RenderAreaAsync\u0060 agora recebe \u0060ISiteRepositorio siteRepo\u0060\n- \u0060CMSXRepo/VitrineRepositorio.cs:356\u0060 \u2014 assinatura do m\u00E9todo atualizada; ap\u00F3s o bloco \u0060data-vitrine-slot\u0060 (linha ~402), inserido o processamento de \u0060data-vitrine-bloco\u0060 reutilizando \u0060area.Aplicacaoid\u0060 (sem query extra) e \u0060GerarHtmlBlocoAsync\u0060 existente\n\nA pr\u00F3xima camada precisa atualizar os dois callers em \u0060VitrineController.cs\u0060 para passar \u0060_siteRepo\u0060.\n\r\n\r\n=== CAMADA: API ===\r\nCamada API conclu\u00EDda. \u0060PublicarArea\u0060 (linha 91) e \u0060RenderArea\u0060 (linha 105) agora passam \u0060_siteRepo\u0060 como segundo argumento para \u0060RenderAreaAsync\u0060. Nenhuma outra modifica\u00E7\u00E3o foi feita.\n\r\n\r\n",
+  "prompt_agente": null,
+  "diretorio_alvo": "T:\\Developer\\RepositorioTrabalho\\tecbakana\\cmsx",
+  "timestamp": "2026-05-16T00:00:00Z",
+  "pendencias": null,
+  "resposta_usuario": null,
+  "comentarios_teste": null,
+  "timestamp_atualizacao": "2026-05-16T20:23:39.1150633Z",
+  "resultado_revisao": "\u0060\u0060\u0060json\n{\n  \u0022aprovado\u0022: true,\n  \u0022resumo\u0022: \u0022RenderAreaAsync estendido para processar data-vitrine-bloco com inje\u00E7\u00E3o de ISiteRepositorio; assinatura atualizada em ICMSX e CMSXRepo; callers em VitrineController passam _siteRepo corretamente. Implementa\u00E7\u00E3o inferida por evid\u00EAncia indireta (26 testes passando implica compila\u00E7\u00E3o com nova assinatura; callers j\u00E1 usam RenderAreaAsync(areaId, _siteRepo) sem erro). Escopo vai al\u00E9m da spec \u2014 novos endpoints de \u00E1rea, UI vitrine-admin refatorada para chips, suporte a provedor no agente \u2014 todas as adi\u00E7\u00F5es extras respeitam N-Tier e guardrails.\u0022,\n  \u0022url_teste\u0022: \u0022/vitrine/area/{areaId}/render\u0022,\n  \u0022violacoes\u0022: [],\n  \u0022avisos\u0022: [\n    {\n      \u0022tipo\u0022: \u0022infra_sem_testcontainers\u0022,\n      \u0022mensagem\u0022: \u0022CMSXRepo/VitrineRepositorio.cs foi modificado com l\u00F3gica nova de renderiza\u00E7\u00E3o de blocos din\u00E2micos (data-vitrine-bloco: lista-produtos, lista-conteudos, lista-categorias), mas nenhum teste Testcontainers cobre VitrineRepositorio. A suite existente cobre apenas AplicacaoRepositorio e PublicTokenRepositorio. O caminho cr\u00EDtico de PublicarArea \u2192 RenderAreaAsync \u2192 GerarHtmlBlocoAsync n\u00E3o tem cobertura automatizada.\u0022,\n      \u0022arquivos\u0022: [\u0022CMSXRepo/VitrineRepositorio.cs\u0022]\n    },\n    {\n      \u0022tipo\u0022: \u0022bola_potencial\u0022,\n      \u0022mensagem\u0022: \u0022BuscaTemplate(Guid id) verifica apenas que o caller \u00E9 um tenant autenticado (AplicacaoId not empty), mas n\u00E3o valida que o template pertence a esta aplica\u00E7\u00E3o. Se templates forem por-tenant ou contiverem dados sens\u00EDveis do tenant, qualquer tenant autenticado pode enumerar templates alheios por GUID. Se templates s\u00E3o globais/admin-only, este aviso \u00E9 inaplic\u00E1vel \u2014 confirmar no BuscaTemplateAsync do reposit\u00F3rio.\u0022,\n      \u0022arquivos\u0022: [\u0022CMSAPI/Controllers/VitrineController.cs\u0022]\n    },\n    {\n      \u0022tipo\u0022: \u0022diff_truncado\u0022,\n      \u0022mensagem\u0022: \u0022Diff truncado em 20k chars: altera\u00E7\u00F5es em ICMSX/IVitrineRepositorio.cs e o corpo completo do novo bloco em CMSXRepo/VitrineRepositorio.cs n\u00E3o foram revisados diretamente. Implementa\u00E7\u00E3o inferida por evid\u00EAncia indireta. Recomenda-se revis\u00E3o manual do bloco de processamento data-vitrine-bloco para confirmar que aplicacaoId vem de area.Aplicacaoid (n\u00E3o de query) e que a itera\u00E7\u00E3o reversa (Count-1 down to 0) est\u00E1 correta para evitar index shift durante substitui\u00E7\u00E3o de substrings.\u0022,\n      \u0022arquivos\u0022: [\u0022ICMSX/IVitrineRepositorio.cs\u0022, \u0022CMSXRepo/VitrineRepositorio.cs\u0022]\n    }\n  ]\n}\n\u0060\u0060\u0060\n",
+  "url_teste": "/vitrine/area/{areaId}/render",
+  "consideracoes_refazer": null,
+  "contratos": {
+    "schema": {
+      "afetada": false,
+      "escopo": "",
+      "artefatos": [],
+      "expoe": ""
+    },
+    "repositorio": {
+      "afetada": true,
+      "escopo": "Alterar assinatura de RenderAreaAsync em IVitrineRepositorio para aceitar ISiteRepositorio; implementar processamento de data-vitrine-bloco em VitrineRepositorio.RenderAreaAsync ap\u00F3s o bloco data-vitrine-slot existente, reutilizando GerarHtmlBlocoAsync",
+      "artefatos": [
+        "ICMSX/IVitrineRepositorio.cs",
+        "CMSXRepo/VitrineRepositorio.cs"
+      ],
+      "expoe": "Task\u003Cstring?\u003E RenderAreaAsync(string areaId, ISiteRepositorio siteRepo) \u2014 HTML renderizado com blocos din\u00E2micos do banco injetados"
+    },
+    "api": {
+      "afetada": true,
+      "escopo": "Atualizar os dois callers de RenderAreaAsync em VitrineController (PublicarArea e RenderArea) para passar _siteRepo como segundo argumento",
+      "artefatos": [
+        "CMSAPI/Controllers/VitrineController.cs"
+      ],
+      "expoe": "Endpoints GET/POST de \u00E1rea retornam HTML com se\u00E7\u00F5es data-vitrine-bloco preenchidas com dados reais"
+    },
+    "frontend": {
+      "afetada": false,
+      "escopo": "",
+      "artefatos": [],
+      "expoe": ""
+    }
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "id": "forge-auto-fix-on-review-fail",
+  "api": "Forge V2",
+  "tipo": "feature",
+  "impacto": "alto",
+  "descricao": "Auto-fix loop: quando o review reprova uma dev-request, acionar agente de correção automaticamente e recolocar em pendente",
+  "detalhes": "Atualmente quando o review retorna 'aprovado: false' o fluxo para. A proposta é: (1) OrchestratorService detecta aprovado=false no resultado do review; (2) monta prompt com as violações (regra + encontrado + esperado de cada item) e chama o claude CLI (--print) no diretório alvo do repositório; (3) após execução do agente de fix, status volta para 'pendente' para reiniciar o ciclo; (4) adicionar campo 'tentativas_fix' no DevRequest — após N tentativas sem aprovação (sugestão: 3), escalar para 'impeditivo' com campo 'violacoes_historico' acumulando o JSON de cada review reprovado.\n\nCampos novos no modelo DevRequest:\n- tentativas_fix: int (default 0)\n- max_tentativas_fix: int (default 3)\n- violacoes_historico: string? (JSON array com histórico de reviews reprovados)\n\nPontos de alteração:\n- src/DevAutomation.Server/Models/DevRequest.cs — novos campos\n- src/DevAutomation.Server/Services/OrchestratorService.cs — lógica pós-review: se aprovado=false e tentativas < max, chamar fix agent e voltar para pendente; se tentativas >= max, escalar para impeditivo\n- config/environments.json — possível configuração de max_tentativas global\n\nAgente de fix: claude CLI via Process.Start com --print e prompt contendo as violações. Diretório de trabalho = diretorio_alvo da dev-request.",
+  "url_externa": null,
+  "status": "pendente",
+  "impeditivo": false,
+  "resultado": null,
+  "prompt_agente": null,
+  "diretorio_alvo": "T:\\Developer\\RepositorioTrabalho\\tecbakana\\ForgeV2\\",
+  "timestamp": "2026-05-13T00:00:00.000Z",
+  "pendencias": null,
+  "resposta_usuario": null,
+  "comentarios_teste": null,
+  "timestamp_atualizacao": "2026-05-13T00:00:00.000Z"
+}

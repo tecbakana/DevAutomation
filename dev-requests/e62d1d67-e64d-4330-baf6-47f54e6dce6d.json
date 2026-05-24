@@ -1,0 +1,19 @@
+{
+  "id": "e62d1d67-e64d-4330-baf6-47f54e6dce6d",
+  "api": "Loja Publica",
+  "tipo": "feature",
+  "impacto": "medio",
+  "descricao": "incluir link para feature de reset de senha \u0022Esqueci a senha\u0022",
+  "detalhes": "O link deve ficar no formul\u00E1rio de login da loja, mas a feature de reset de senha est\u00E1 implementada no salematic",
+  "url_externa": null,
+  "status": "done",
+  "impeditivo": false,
+  "resultado": "Tudo implementado. Resumo do que foi feito:\n\n**CMSAPI.Publica**\n- \u0060LojaPublicaDtos.cs\u0060 \u2014 adicionados \u0060EsqueciSenhaRequest\u0060 e \u0060ResetSenhaRequest\u0060\n- \u0060SalematicHttpService.cs\u0060 \u2014 m\u00E9todos \u0060EsqueciSenhaAsync\u0060 (proxy para \u0060api/auth/forgot-password\u0060) e \u0060ResetSenhaAsync\u0060 (proxy para \u0060api/auth/reset-password\u0060)\n- \u0060LojaPublicaController.cs\u0060 \u2014 endpoints \u0060POST api/publico/loja/auth/esqueci-senha\u0060 e \u0060POST api/publico/loja/auth/reset-senha\u0060, ambos \u0060[AllowAnonymous]\u0060\n\n**PublicUI**\n- \u0060loja-login.component.html\u0060 \u2014 link \u0022Esqueci a senha\u0022 abaixo do bot\u00E3o Entrar, aponta para \u0060/loja/esqueci-senha\u0060\n- \u0060loja/esqueci-senha/\u0060 \u2014 novo componente: formul\u00E1rio com campo e-mail, chama o endpoint e exibe mensagem gen\u00E9rica de sucesso\n- \u0060loja/reset-senha/\u0060 \u2014 novo componente: l\u00EA \u0060?token=\u0060 da querystring, formul\u00E1rio com nova senha \u002B confirma\u00E7\u00E3o, redireciona para login ap\u00F3s sucesso\n- \u0060loja.module.ts\u0060 \u2014 rotas e declarations registrados\n\n**Observa\u00E7\u00E3o:** o \u0060ResetSenhaComponent\u0060 espera o token via querystring (\u0060?token=...\u0060), que \u00E9 o padr\u00E3o enviado em e-mails de reset. Confirme se o Salematic envia o link nesse formato; se usar formato diferente (ex: path param), ajusto o \u0060ngOnInit\u0060.\n",
+  "prompt_agente": null,
+  "diretorio_alvo": "T:\\Developer\\RepositorioTrabalho\\tecbakana\\cmsx\\PublicUI\\ClientApp\\",
+  "timestamp": "2026-04-26T02:21:57.3499763Z",
+  "pendencias": "N\u00E3o existe componente nem rota de reset de senha no PublicUI. O link \u0027Esqueci a senha\u0027 precisa apontar para algum lugar. Duas op\u00E7\u00F5es: (1) criar o componente de reset aqui mesmo no PublicUI agora, ou (2) apenas inserir o link apontando para uma rota que ser\u00E1 criada depois (ex: /loja/esqueci-senha). Qual prefere? E o backend (CMSAPI.Publica ou CMSAPI) j\u00E1 tem endpoint de reset de senha, ou isso tamb\u00E9m precisa ser criado?",
+  "resposta_usuario": "A feature est\u00E1 implementada na Salematic.API :\n- api/auth/forgot-password\n-api/auth/reset-password\n\nDevem ser criado os endpoints correspondentes no CMSAPI.Publica\n- /loja/esqueci-senha\n-/loja/reset-senha\nEsse endpoints enviam as requisi\u00E7\u00F5es para a Salematic.API\nNo Public UI o link deve remeter para /loja/esqueci-senha do CMSAPI.Publica\n\nCaso tenha duvidas, voltar para impeditivo",
+  "comentarios_teste": null,
+  "timestamp_atualizacao": "2026-04-26T14:32:38.2900926Z"
+}

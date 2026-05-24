@@ -191,9 +191,8 @@ public class GeminiService
         var resp = await _http.PostAsync(url, new StringContent(body, Encoding.UTF8, "application/json"));
         var raw  = await resp.Content.ReadAsStringAsync();
         var doc  = JsonNode.Parse(raw);
-        var vals = doc?["embedding"]?["values"]?.AsArray();
-        if (vals == null)
-            throw new InvalidOperationException($"Resposta de embedding inválida: {raw}");
+        var vals = doc?["embedding"]?["values"]?.AsArray()
+            ?? throw new InvalidOperationException($"Resposta de embedding inválida: {raw}");
         return [.. vals.Select(v => v!.GetValue<float>())];
     }
 

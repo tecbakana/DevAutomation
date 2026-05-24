@@ -1,0 +1,55 @@
+{
+  "id": "vitrine-canonico-2-contratos",
+  "api": "cmsx",
+  "tipo": "feature",
+  "impacto": "medio",
+  "descricao": "Atualizar contratos ICMSX: AreaInput \u002B VitrineGerarAreaInput",
+  "detalhes": "Atualizar os records de input no projeto ICMSX para suportar a feature de \u00E1rea can\u00F4nica e op\u00E7\u00F5es de gera\u00E7\u00E3o de vitrine.\n\n**Arquivo a editar:** \u0060T:\\Developer\\RepositorioTrabalho\\tecbakana\\cmsx\\ICMSX\\IAreasRepositorio.cs\u0060\n\nRecord atual:\n\u0060\u0060\u0060csharp\npublic record AreaInput(string? Nome, string? Url, string? Descricao, string? Areaidpai, int? Posicao, int? Tipoarea, string Tipo);\n\u0060\u0060\u0060\n\nRecord novo \u2014 adicionar \u0060bool CanonicalArea = false\u0060 como par\u00E2metro opcional no final:\n\u0060\u0060\u0060csharp\npublic record AreaInput(string? Nome, string? Url, string? Descricao, string? Areaidpai, int? Posicao, int? Tipoarea, string Tipo, bool CanonicalArea = false);\n\u0060\u0060\u0060\n\n---\n\n**Arquivo a editar:** \u0060T:\\Developer\\RepositorioTrabalho\\tecbakana\\cmsx\\ICMSX\\IVitrineRepositorio.cs\u0060\n\nRecord atual:\n\u0060\u0060\u0060csharp\npublic record VitrineGerarAreaInput(string Prompt, string? Segmento = null, string? Provedor = null);\n\u0060\u0060\u0060\n\nRecord novo \u2014 adicionar campos opcionais de estilo e tema can\u00F4nico:\n\u0060\u0060\u0060csharp\npublic record VitrineGerarAreaInput(\n    string Prompt,\n    string? Segmento = null,\n    string? Provedor = null,\n    string? Tipo = null,\n    string? Estilo = null,\n    string? Paleta = null,\n    string? TemaCanonicoJson = null\n);\n\u0060\u0060\u0060\n\n**Sem\u00E2ntica dos novos campos:**\n- \u0060Tipo\u0060: tipo de p\u00E1gina (ex: \u0027landing\u0027, \u0027institucional\u0027, \u0027catalogo\u0027) \u2014 complementa o prompt\n- \u0060Estilo\u0060: estilo visual (ex: \u0027moderno\u0027, \u0027minimalista\u0027, \u0027bold\u0027) \u2014 usado no system prompt\n- \u0060Paleta\u0060: paleta de cores nomeada (ex: \u0027dark\u0027, \u0027pastel\u0027, \u0027corporativo\u0027) \u2014 usado no system prompt\n- \u0060TemaCanonicoJson\u0060: JSON serializado do \u0060TemaConfig\u0060 da \u00E1rea can\u00F4nica \u2014 quando presente, o gerador deve preservar as propriedades de tema\n\n**Observa\u00E7\u00F5es:**\n- ICMSX n\u00E3o pode referenciar EFCore nem l\u00F3gica de neg\u00F3cio.\n- Todos os novos campos s\u00E3o opcionais para garantir compatibilidade retroativa.\n- N\u00E3o alterar interfaces nem outros m\u00E9todos nesta task.",
+  "url_externa": null,
+  "status": "done",
+  "impeditivo": false,
+  "resultado": "Contratos atualizados e compilando sem erros:\n\n- \u0060AreaInput\u0060 recebe \u0060bool CanonicalArea = false\u0060 como \u00FAltimo par\u00E2metro \u2014 retrocompat\u00EDvel com todos os call sites existentes.\n- \u0060VitrineGerarAreaInput\u0060 expandido com \u0060Tipo\u0060, \u0060Estilo\u0060, \u0060Paleta\u0060 e \u0060TemaCanonicoJson\u0060, todos opcionais \u2014 call sites que passam apenas \u0060Prompt\u0060 continuam funcionando sem altera\u00E7\u00E3o.\n",
+  "prompt_agente": null,
+  "diretorio_alvo": "T:\\Developer\\RepositorioTrabalho\\tecbakana\\cmsx\\ICMSX",
+  "timestamp": "2026-05-17T00:00:00Z",
+  "pendencias": null,
+  "dependencias": [
+    "vitrine-canonico-1-migration"
+  ],
+  "bloqueado": false,
+  "resposta_usuario": null,
+  "comentarios_teste": null,
+  "timestamp_atualizacao": "2026-05-17T20:53:31.2867823Z",
+  "resultado_revisao": "\u0060\u0060\u0060json\n{\n  \u0022aprovado\u0022: true,\n  \u0022resumo\u0022: \u0022Ambos os records do ICMSX foram atualizados conforme a spec: AreaInput recebeu o par\u00E2metro opcional \u0027bool CanonicalArea = false\u0027 na posi\u00E7\u00E3o correta, e VitrineGerarAreaInput recebeu os quatro novos campos opcionais (Tipo, Estilo, Paleta, TemaCanonicoJson). ICMSX n\u00E3o referencia EFCore nem l\u00F3gica de neg\u00F3cio. Retrocompatibilidade garantida por defaults em todos os novos campos. O diff de contexto mais amplo (controllers, agents, UI) n\u00E3o \u00E9 escopo desta task e n\u00E3o foi avaliado aqui.\u0022,\n  \u0022url_teste\u0022: null,\n  \u0022violacoes\u0022: [],\n  \u0022avisos\u0022: [\n    {\n      \u0022tipo\u0022: \u0022triade_parcial_justificada\u0022,\n      \u0022mensagem\u0022: \u0022Task \u00E9 exclusivamente de contrato de interface (records em ICMSX). N\u00E3o h\u00E1 pilar de endpoint ou UI associado diretamente \u2014 os consumers (VitrineController, AreaController) j\u00E1 existem e consomem os campos via binding. Omiss\u00E3o justificada pela natureza da spec.\u0022,\n      \u0022arquivos\u0022: [\u0022ICMSX/IAreasRepositorio.cs\u0022, \u0022ICMSX/IVitrineRepositorio.cs\u0022]\n    }\n  ]\n}\n\u0060\u0060\u0060\n",
+  "url_teste": null,
+  "consideracoes_refazer": null,
+  "contratos": {
+    "schema": {
+      "afetada": false,
+      "escopo": "",
+      "artefatos": [],
+      "expoe": ""
+    },
+    "repositorio": {
+      "afetada": true,
+      "escopo": "Atualizar os dois records de input no projeto ICMSX: adicionar \u0027bool CanonicalArea = false\u0027 em AreaInput; adicionar quatro campos opcionais (Tipo, Estilo, Paleta, TemaCanonicoJson) em VitrineGerarAreaInput. Sem altera\u00E7\u00E3o de interfaces nem implementa\u00E7\u00F5es CMSXRepo.",
+      "artefatos": [
+        "ICMSX/IAreasRepositorio.cs",
+        "ICMSX/IVitrineRepositorio.cs"
+      ],
+      "expoe": "AreaInput e VitrineGerarAreaInput atualizados com campos opcionais retrocompat\u00EDveis, consum\u00EDveis por CMSXRepo e CMSAPI sem breaking change"
+    },
+    "api": {
+      "afetada": false,
+      "escopo": "",
+      "artefatos": [],
+      "expoe": ""
+    },
+    "frontend": {
+      "afetada": false,
+      "escopo": "",
+      "artefatos": [],
+      "expoe": ""
+    }
+  }
+}

@@ -1,0 +1,55 @@
+{
+  "id": "vitrine-canonico-1-migration",
+  "api": "cmsx",
+  "tipo": "feature",
+  "impacto": "alto",
+  "descricao": "Adicionar campo CanonicalArea em Area.cs \u002B EF Core Migration",
+  "detalhes": "Adicionar o campo bool \u0060CanonicalArea\u0060 na entidade Area e gerar a migration correspondente.\n\n**Arquivo a editar:** \u0060T:\\Developer\\RepositorioTrabalho\\tecbakana\\cmsx\\CMSXData\\Models\\Area.cs\u0060\n\nAdicionar a propriedade **ap\u00F3s** \u0060VitrinePublicado\u0060:\n\u0060\u0060\u0060csharp\npublic bool CanonicalArea { get; set; } = false;\n\u0060\u0060\u0060\n\n**Compatibilidade multi-banco (obrigat\u00F3rio):**\nO tipo \u0060bool\u0060 no EF Core mapeia automaticamente para:\n- SQL Server \u2192 \u0060bit NOT NULL DEFAULT 0\u0060\n- PostgreSQL \u2192 \u0060boolean NOT NULL DEFAULT false\u0060\n- MySQL \u2192 \u0060tinyint(1) NOT NULL DEFAULT 0\u0060\n\nN\u00E3o \u00E9 necess\u00E1ria configura\u00E7\u00E3o Fluent API adicional \u2014 a conven\u00E7\u00E3o do EF Core resolve.\n\n**EF Core Migration:**\nGerar migration manualmente no projeto \u0060CMSXData\u0060 com o nome \u0060AddCanonicalAreaToArea\u0060.\n\nConte\u00FAdo esperado da migration:\n\u0060\u0060\u0060csharp\nmigrationBuilder.AddColumn\u003Cbool\u003E(\n    name: \u0022CanonicalArea\u0022,\n    table: \u0022Areas\u0022,\n    type: \u0022bit\u0022,   // ou boolean para Postgres\n    nullable: false,\n    defaultValue: false);\n\u0060\u0060\u0060\n\nO arquivo \u0060CmsxDbContextModelSnapshot.cs\u0060 tamb\u00E9m deve ser atualizado com o novo campo.\n\n**Observa\u00E7\u00F5es:**\n- N\u00E3o criar controller nem endpoint nesta task.\n- O campo default \u0060false\u0060 garante que \u00E1reas existentes n\u00E3o s\u00E3o afetadas.\n- O nome \u0060CanonicalArea\u0060 \u00E9 intencional em ingl\u00EAs para seguir conven\u00E7\u00E3o dos campos de feature mais recentes.",
+  "url_externa": null,
+  "status": "done",
+  "impeditivo": false,
+  "resultado": "Feito. Resumo do que foi entregue:\n\n**\u0060CMSXData/Models/Area.cs\u0060** \u2014 propriedade \u0060CanonicalArea\u0060 adicionada ap\u00F3s \u0060VitrinePublicado\u0060, com default \u0060false\u0060.\n\n**\u0060Migrations/20260520000000_AddCanonicalAreaToArea.cs\u0060** \u2014 migration com \u0060Up\u0060 (AddColumn bool, nullable=false, defaultValue=false) e \u0060Down\u0060 (DropColumn). Timestamp \u006020260520\u0060 garante ordem ap\u00F3s a \u00FAltima migration existente (\u006020260519\u0060).\n\n**\u0060Migrations/20260520000000_AddCanonicalAreaToArea.Designer.cs\u0060** \u2014 stub padr\u00E3o do projeto.\n\n**\u0060Migrations/CmsxDbContextModelSnapshot.cs\u0060** \u2014 bloco \u0060CanonicalArea\u0060 inserido no entity \u0060Area\u0060, seguindo o mesmo padr\u00E3o de \u0060VitrinePublicado\u0060 (boolean, ValueGeneratedOnAdd, defaultValue false).\n",
+  "prompt_agente": null,
+  "diretorio_alvo": "T:\\Developer\\RepositorioTrabalho\\tecbakana\\cmsx\\CMSXData",
+  "timestamp": "2026-05-17T00:00:00Z",
+  "pendencias": null,
+  "dependencias": null,
+  "bloqueado": false,
+  "resposta_usuario": null,
+  "comentarios_teste": null,
+  "timestamp_atualizacao": "2026-05-17T20:49:59.837523Z",
+  "resultado_revisao": "\u0060\u0060\u0060json\n{\n  \u0022aprovado\u0022: true,\n  \u0022resumo\u0022: \u0022Spec executada corretamente: CanonicalArea adicionado em Area.cs na posi\u00E7\u00E3o correta (ap\u00F3s VitrinePublicado), migration AddCanonicalAreaToArea gerada com AddColumn\u003Cbool\u003E sem type hardcoded (correto para multi-provider), CmsxDbContextModelSnapshot.cs atualizado refletindo boolean do Postgres. Nenhum controller ou endpoint foi criado, conforme exigido. O diff acumula altera\u00E7\u00F5es de outras tasks al\u00E9m da spec \u2014 dois pontos merecem aten\u00E7\u00E3o imediata.\u0022,\n  \u0022url_teste\u0022: null,\n  \u0022violacoes\u0022: [],\n  \u0022avisos\u0022: [\n    {\n      \u0022tipo\u0022: \u0022triade_parcial_justificada\u0022,\n      \u0022mensagem\u0022: \u0022Tr\u00EDade incompleta por design: spec declara explicitamente \u0027N\u00E3o criar controller nem endpoint nesta task\u0027. Aus\u00EAncia de endpoint e UI \u00E9 intencional e correta.\u0022,\n      \u0022arquivos\u0022: [\u0022CMSXData/Models/Area.cs\u0022, \u0022CMSXData/Migrations/20260520000000_AddCanonicalAreaToArea.cs\u0022]\n    },\n    {\n      \u0022tipo\u0022: \u0022infra_sem_testcontainers\u0022,\n      \u0022mensagem\u0022: \u0022CMSXData/Models/Area.cs e CMSXData/Migrations/ alterados sem cobertura de Testcontainers. A migration AddCanonicalAreaToArea n\u00E3o foi validada contra nenhum provider real (SQL Server ou PostgreSQL). Risco: regress\u00E3o silenciosa em schema se o provider tiver comportamento divergente no nullable de bool.\u0022,\n      \u0022arquivos\u0022: [\u0022CMSXData/Migrations/20260520000000_AddCanonicalAreaToArea.cs\u0022, \u0022CMSXData/Migrations/CmsxDbContextModelSnapshot.cs\u0022]\n    },\n    {\n      \u0022tipo\u0022: \u0022debug_data_em_producao\u0022,\n      \u0022mensagem\u0022: \u0022GerarArea retorna \u0027_debug_rawIA: jsonBruto\u0027 em produ\u00E7\u00E3o. O campo exp\u00F5e a resposta bruta do modelo de IA ao frontend autenticado, incluindo o JSON completo gerado pelo agente. Embora o endpoint exija JWT, em multi-tenant isso significa que qualquer tenant pode inspecionar o payload bruto do AI e inferir detalhes do system prompt ou estrutura interna do VitrineConfig. Remover \u0027_debug_rawIA\u0027 do Ok() antes de promover para main.\u0022,\n      \u0022arquivos\u0022: [\u0022CMSAPI/Controllers/VitrineController.cs\u0022]\n    },\n    {\n      \u0022tipo\u0022: \u0022file_io_em_controller\u0022,\n      \u0022mensagem\u0022: \u0022VitrineController injeta IWebHostEnvironment e implementa LerDesignSystemCssAsync() lendo diretamente do sistema de arquivos via Path.Combine \u002B File.ReadAllTextAsync. Opera\u00E7\u00E3o de I/O de infraestrutura em Controller viola separa\u00E7\u00E3o de responsabilidades. Deve ser extra\u00EDda para um IDesignSystemService registrado no DI \u2014 o controller n\u00E3o deve conhecer WebRootPath.\u0022,\n      \u0022arquivos\u0022: [\u0022CMSAPI/Controllers/VitrineController.cs\u0022]\n    }\n  ]\n}\n\u0060\u0060\u0060\n",
+  "url_teste": null,
+  "consideracoes_refazer": null,
+  "contratos": {
+    "schema": {
+      "afetada": true,
+      "escopo": "Adicionar propriedade \u0060bool CanonicalArea { get; set; } = false\u0060 na entidade Area ap\u00F3s o campo VitrinePublicado. Criar migration \u0060AddCanonicalAreaToArea\u0060 com AddColumn\u003Cbool\u003E na tabela Areas. Atualizar CmsxDbContextModelSnapshot.cs com o novo campo.",
+      "artefatos": [
+        "CMSXData/Models/Area.cs",
+        "CMSXData/Migrations/AddCanonicalAreaToArea.cs",
+        "CMSXData/Migrations/AddCanonicalAreaToArea.Designer.cs",
+        "CMSXData/Migrations/CmsxDbContextModelSnapshot.cs"
+      ],
+      "expoe": "Entidade Area com propriedade CanonicalArea (bool, default false) dispon\u00EDvel para mapeamento ORM em todos os reposit\u00F3rios que consultam Areas."
+    },
+    "repositorio": {
+      "afetada": false,
+      "escopo": "",
+      "artefatos": [],
+      "expoe": ""
+    },
+    "api": {
+      "afetada": false,
+      "escopo": "",
+      "artefatos": [],
+      "expoe": ""
+    },
+    "frontend": {
+      "afetada": false,
+      "escopo": "",
+      "artefatos": [],
+      "expoe": ""
+    }
+  }
+}

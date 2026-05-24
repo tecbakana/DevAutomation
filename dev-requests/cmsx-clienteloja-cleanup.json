@@ -1,0 +1,55 @@
+{
+  "id": "cmsx-clienteloja-cleanup",
+  "api": "cmsx",
+  "tipo": "refatoracao",
+  "impacto": "medio",
+  "descricao": "ClienteLojaRepositorio \u2014 remover MakeConnectionAsync legado e migrar ListaClienteLojaAsync para EF Core",
+  "detalhes": "A persist\u00EAncia do ClienteLoja j\u00E1 funciona via EF Core (CriaClienteLojaAsync usa _db.Add \u002B SaveChangesAsync). Mas a interface e o reposit\u00F3rio carregam d\u00E9bito t\u00E9cnico do CMSXDAO que precisa ser eliminado.\n\n## Problemas identificados\n\n1. \u0060IClienteLojaRepositorio.MakeConnectionAsync(dynamic prop)\u0060 \u2014 \u0060dynamic\u0060 na interface \u00E9 viola\u00E7\u00E3o; o m\u00E9todo n\u00E3o tem efeito no path EF Core mas \u00E9 chamado em \u0060LojaPublicaController\u0060 antes de \u0060CriaClienteLojaAsync\u0060 sem necessidade\n2. \u0060ListaClienteLojaAsync\u0060 delega para \u0060_dal.ListaClienteLoja()\u0060 (CMSXDAO) em vez de consultar via EF Core\n3. \u0060ClienteLojaRepositorio\u0060 mant\u00E9m inje\u00E7\u00E3o de \u0060IClienteLojaDAL\u0060 que deixa de ser necess\u00E1ria ap\u00F3s a migra\u00E7\u00E3o\n\n## Mudan\u00E7as esperadas\n\n### ICMSX/IClienteLojaRepositorio.cs\n- Remover \u0060Task MakeConnectionAsync(dynamic prop)\u0060 da interface\n- \u0060ListaClienteLojaAsync\u0060 mant\u00E9m assinatura, retorno muda para \u0060Task\u003CIEnumerable\u003CClienteLoja\u003E\u003E\u0060\n\n### CMSXRepo/ClienteLojaRepositorio.cs\n- Remover inje\u00E7\u00E3o de \u0060IClienteLojaDAL dal\u0060 do construtor\n- Remover implementa\u00E7\u00E3o de \u0060MakeConnectionAsync\u0060\n- Migrar \u0060ListaClienteLojaAsync\u0060 para EF Core:\n  \u0060\u0060\u0060csharp\n  public async Task\u003CIEnumerable\u003CClienteLoja\u003E\u003E ListaClienteLojaAsync() =\u003E\n      await _db.ClienteLojas.AsNoTracking().ToListAsync();\n  \u0060\u0060\u0060\n- Verificar se o DbSet \u0060ClienteLojas\u0060 existe em \u0060CmsxDbContext\u0060 \u2014 se n\u00E3o existir, adicionar \u0060DbSet\u003CClienteLoja\u003E ClienteLojas\u0060\n\n### CMSAPI.Publica/Controllers/LojaPublicaController.cs\n- Remover as linhas com \u0060MakeConnectionAsync\u0060 (linhas ~79-82):\n  \u0060\u0060\u0060csharp\n  // REMOVER estas linhas:\n  dynamic connProps = new System.Dynamic.ExpandoObject();\n  connProps.banco = \u0022SqlServer\u0022;\n  connProps.parms = 3;\n  await clienteLojaRepo.MakeConnectionAsync(connProps);\n  \u0060\u0060\u0060\n\n## Regras obrigat\u00F3rias\n- N\u00E3o alterar a assinatura ou comportamento de \u0060CriaClienteLojaAsync\u0060 \u2014 apenas remove o boilerplate ao redor\n- Verificar se \u0060IClienteLojaDAL\u0060 ainda \u00E9 usada em outro lugar antes de alterar o DI registration\n- \u0060ListaClienteLojaAsync\u0060 deve retornar \u0060Task\u003CIEnumerable\u003CClienteLoja\u003E\u003E\u0060 (j\u00E1 era async na interface mas implementa\u00E7\u00E3o era s\u00EDncrona via DAL)",
+  "url_externa": null,
+  "status": "done",
+  "impeditivo": false,
+  "resultado": "=== CAMADA: SCHEMA ===\r\nCompila\u00E7\u00E3o limpa. Entrega da camada Schema:\n\n- \u0060DbSet\u003CClienteLoja\u003E ClienteLojas\u0060 adicionado em \u0060CmsxDbContext.cs\u0060 (linha 77)\n- Configura\u00E7\u00E3o \u0060OnModelCreating\u0060 mapeada: tabela \u0060clienteloja\u0060, PK \u0060clientelojaid\u0060, colunas \u0060aplicacaoid\u0060, \u0060salematicClienteId\u0060, \u0060datainclusao\u0060\n- N\u00E3o foi criada migration \u2014 tabela existe no banco legado; o mapeamento \u00E9 suficiente para queries EF Core ass\u00EDncronas\n- 0 warnings, 0 erros\n\r\n\r\n=== CAMADA: REPOSITORIO ===\r\nPronto. Resumo das mudan\u00E7as:\n\n**ICMSX/IClienteLojaRepositorio.cs** \u2014 removido \u0060Task MakeConnectionAsync(dynamic prop)\u0060 da interface.\n\n**CMSXRepo/ClienteLojaRepositorio.cs** \u2014 removida inje\u00E7\u00E3o de \u0060IClienteLojaDAL\u0060, removida implementa\u00E7\u00E3o de \u0060MakeConnectionAsync\u0060, removido \u0060using System.Dynamic\u0060, \u0060ListaClienteLojaAsync\u0060 migrada para \u0060_db.ClienteLojas.AsNoTracking().ToListAsync()\u0060.\n\n**Observa\u00E7\u00E3o para a camada de Controller:** \u0060MakeConnectionAsync\u0060 ainda \u00E9 chamado em \u0060LojaPublicaController\u0060 \u2014 aquela remo\u00E7\u00E3o (\u0060connProps \u002B await clienteLojaRepo.MakeConnectionAsync(...)\u0060) precisa ser feita no escopo da camada de apresenta\u00E7\u00E3o para o build compilar.\n\r\n\r\n=== CAMADA: API ===\r\nFeito. Bloco \u0060dynamic connProps\u0060 \u002B chamada \u0060MakeConnectionAsync\u0060 removidos do \u0060Registrar\u0060. O endpoint \u0060POST /api/publico/loja/auth/registrar\u0060 agora chama \u0060CriaClienteLojaAsync\u0060 diretamente ap\u00F3s o retorno da Salematic.\n\r\n\r\n",
+  "prompt_agente": null,
+  "diretorio_alvo": "T:\\Developer\\RepositorioTrabalho\\tecbakana\\cmsx",
+  "timestamp": "2026-05-14T00:00:00Z",
+  "pendencias": null,
+  "resposta_usuario": null,
+  "comentarios_teste": null,
+  "timestamp_atualizacao": "2026-05-14T20:37:00.7373608Z",
+  "resultado_revisao": "\u0060\u0060\u0060json\n{\n  \u0022aprovado\u0022: false,\n  \u0022resumo\u0022: \u0022Spec implementada corretamente: MakeConnectionAsync removido da interface e do controller, ListaClienteLojaAsync migrado para EF Core com AsNoTracking, inje\u00E7\u00E3o de IClienteLojaDAL eliminada. DbSet\u003CClienteLoja\u003E confirmado no CmsxDbContext (linha 77). Por\u00E9m a revis\u00E3o identificou uma viola\u00E7\u00E3o bloqueante no arquivo de controller que foi editado nesta mesma task.\u0022,\n  \u0022url_teste\u0022: \u0022/api/publico/loja/resolve\u0022,\n  \u0022violacoes\u0022: [\n    {\n      \u0022regra\u0022: \u0022NUNCA usar \u0060using CMSXData.Models\u0060 em controllers \u2014 a \u00FAnica refer\u00EAncia de dados permitida em controllers \u00E9 \u0060using ICMSX\u0060\u0022,\n      \u0022arquivo\u0022: \u0022CMSAPI.Publica/Controllers/LojaPublicaController.cs\u0022,\n      \u0022linha\u0022: 2,\n      \u0022encontrado\u0022: \u0022using CMSXData.Models;\u0022,\n      \u0022esperado\u0022: \u0022Import removido. Todos os usos de Pedido, Aplicacao e Produto no controller s\u00E3o via \u0060var\u0060 \u2014 nenhum tipo CMSXData \u00E9 nomeado explicitamente no corpo do controller; o import \u00E9 stale e cria acoplamento arquitetural proibido. O arquivo j\u00E1 estava no escopo de edi\u00E7\u00E3o desta task \u2014 remo\u00E7\u00E3o era trivial e obrigat\u00F3ria.\u0022\n    }\n  ],\n  \u0022avisos\u0022: [\n    {\n      \u0022tipo\u0022: \u0022infra_sem_testcontainers\u0022,\n      \u0022mensagem\u0022: \u0022ClienteLojaRepositorio.cs foi refatorado (ListaClienteLojaAsync migrado para EF Core) mas n\u00E3o existe nenhum teste de integra\u00E7\u00E3o Testcontainers cobrindo esse reposit\u00F3rio. Os 26 testes aprovados cobrem exclusivamente AplicacaoRepositorio e PublicTokenRepositorio. Regress\u00E3o silenciosa em ListaClienteLojaAsync ou CriaClienteLojaAsync n\u00E3o seria detectada pelo pipeline atual.\u0022,\n      \u0022arquivos\u0022: [\u0022CMSXRepo/ClienteLojaRepositorio.cs\u0022]\n    }\n  ]\n}\n\u0060\u0060\u0060\n",
+  "url_teste": "/api/publico/loja/resolve",
+  "consideracoes_refazer": null,
+  "contratos": {
+    "schema": {
+      "afetada": true,
+      "escopo": "Verificar e adicionar DbSet\u003CClienteLoja\u003E ClienteLojas em CmsxDbContext se n\u00E3o existir; garantir compatibilidade com migra\u00E7\u00F5es EF Core existentes",
+      "artefatos": [
+        "CMSXData/CmsxDbContext.cs"
+      ],
+      "expoe": "DbSet\u003CClienteLoja\u003E ClienteLojas dispon\u00EDvel para queries EF Core ass\u00EDncronas"
+    },
+    "repositorio": {
+      "afetada": true,
+      "escopo": "Remover assinatura Task MakeConnectionAsync(dynamic prop) de IClienteLojaRepositorio; migrar ListaClienteLojaAsync de CMSXDAO para _db.ClienteLojas.AsNoTracking().ToListAsync(); remover inje\u00E7\u00E3o de IClienteLojaDAL do construtor de ClienteLojaRepositorio",
+      "artefatos": [
+        "ICMSX/IClienteLojaRepositorio.cs",
+        "CMSXRepo/ClienteLojaRepositorio.cs"
+      ],
+      "expoe": "IClienteLojaRepositorio sem MakeConnectionAsync; ListaClienteLojaAsync retorna Task\u003CIEnumerable\u003CClienteLoja\u003E\u003E via EF Core"
+    },
+    "api": {
+      "afetada": true,
+      "escopo": "Remover bloco dynamic connProps e chamada a MakeConnectionAsync em LojaPublicaController (~linhas 79-82); chamar CriaClienteLojaAsync diretamente sem inicializa\u00E7\u00E3o de conex\u00E3o",
+      "artefatos": [
+        "CMSAPI.Publica/Controllers/LojaPublicaController.cs"
+      ],
+      "expoe": "Endpoint POST /api/publica/clientes sem depend\u00EAncia de MakeConnectionAsync; fluxo simplificado de cria\u00E7\u00E3o"
+    },
+    "frontend": {
+      "afetada": false,
+      "escopo": "",
+      "artefatos": [],
+      "expoe": ""
+    }
+  }
+}

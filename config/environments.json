@@ -1,31 +1,6 @@
 {
   "apis": [
     {
-      "name": "cmsx",
-      "configType": "json",
-      "configFile": "T:\\Developer\\RepositorioTrabalho\\tecbakana\\cmsx\\CMSUI\\appsettings.json",
-      "gitRepo": "T:\\Developer\\RepositorioTrabalho\\tecbakana",
-      "solutionPath": "T:\\Developer\\RepositorioTrabalho\\tecbakana\\cmsx\\cmsx.sln",
-      "desktop": 1,
-      "batchOpen": "T:\\DevAutomation\\batches\\open-solution.bat",
-      "clients": [
-        "cmsx"
-      ],
-      "runTargets": [
-        {
-          "name": "CMSAPI",
-          "dir": "T:\\Developer\\RepositorioTrabalho\\tecbakana\\cmsx\\CMSAPI",
-          "command": "dotnet run"
-        },
-        {
-          "name": "CMSUI",
-          "dir": "T:\\Developer\\RepositorioTrabalho\\tecbakana\\cmsx\\CMSUI",
-          "command": "dotnet run"
-        }
-      ],
-      "browserUrl": "http://localhost:44455/login"
-    },
-    {
       "name": "Salematic",
       "configType": "json",
       "configFile": "t:\\Developer\\Salematic\\Salematic.API\\appsettings.json",
@@ -46,34 +21,6 @@
       "browserUrl": null
     },
     {
-      "name": "Forge V2",
-      "configType": "json",
-      "configFile": "T:\\Developer\\RepositorioTrabalho\\tecbakana\\ForgeV2\\appsettings.json",
-      "gitRepo": "tT:\\Developer\\RepositorioTrabalho\\tecbakana\\ForgeV2\\",
-      "solutionPath": "T:\\Developer\\RepositorioTrabalho\\tecbakana\\ForgeV2\\Forge.sln",
-      "desktop": 1,
-      "batchOpen": "T:\\Developer\\RepositorioTrabalho\\tecbakana\\ForgeV2\\open-solution.bat",
-      "clients": [
-        "default"
-      ],
-      "runTargets": null,
-      "browserUrl": null
-    },
-    {
-      "name": "SignalR",
-      "configType": "json",
-      "configFile": "T:\\Developer\\RepositorioTrabalho\\tecbakana\\signalRProj\\appsettings.json",
-      "gitRepo": "T:\\Developer\\RepositorioTrabalho\\tecbakana\\signalRProj",
-      "solutionPath": "T:\\Developer\\RepositorioTrabalho\\tecbakana\\signalRProj\\SignalRStudy.sln",
-      "desktop": 1,
-      "batchOpen": "T:\\DevAutomation\\batches\\open-solution.bat",
-      "clients": [
-        "default"
-      ],
-      "runTargets": null,
-      "browserUrl": null
-    },
-    {
       "name": "PedidoGateway",
       "configType": "json",
       "configFile": "T:\\Developer\\RepositorioTrabalho\\tecbakana\\PedidoGateway\\PedidoGateway\\appsettings.json",
@@ -88,17 +35,132 @@
       "browserUrl": null
     },
     {
-      "name": "ClientApp (Loja publica)",
+      "name": "Loja Publica",
       "configType": "json",
-      "configFile": "T:\\Developer\\RepositorioTrabalho\\tecbakana\\cmsx\\cmsui\\ClientApp",
-      "gitRepo": "T:\\Developer\\RepositorioTrabalho\\tecbakana\\cmsx\\cmsui\\ClientApp",
-      "solutionPath": "T:\\Developer\\RepositorioTrabalho\\tecbakana\\cmsx\\cmsui\\ClientApp",
+      "configFile": "T:\\Developer\\RepositorioTrabalho\\tecbakana\\cmsx\\PublicUI\\ClientApp\\",
+      "gitRepo": "T:\\Developer\\RepositorioTrabalho\\tecbakana\\cmsx\\PublicUI\\ClientApp\\",
+      "solutionPath": "T:\\Developer\\RepositorioTrabalho\\tecbakana\\cmsx\\PublicUI\\ClientApp\\",
       "desktop": 1,
       "batchOpen": null,
       "clients": [
         "default"
       ],
-      "runTargets": null,
+      "runTargets": [
+        {
+          "name": "Loja Publica",
+          "dir": "T:\\Developer\\RepositorioTrabalho\\tecbakana\\cmsx\\PublicUI\\ClientApp",
+          "command": "dotnet run"
+        }
+      ],
+      "browserUrl": null
+    },
+    {
+      "name": "CMSAPI Publica",
+      "configType": "json",
+      "configFile": "T:\\Developer\\RepositorioTrabalho\\tecbakana\\cmsx\\CMSAPI.Publica",
+      "gitRepo": "T:\\Developer\\RepositorioTrabalho\\tecbakana\\cmsx\\CMSAPI.Publica",
+      "solutionPath": "T:\\Developer\\RepositorioTrabalho\\tecbakana\\cmsx\\CMSAPI.Publica",
+      "desktop": 1,
+      "batchOpen": null,
+      "clients": [
+        "default"
+      ],
+      "runTargets": [
+        {
+          "name": "CMSAPI Publica",
+          "dir": "T:\\Developer\\RepositorioTrabalho\\tecbakana\\cmsx\\CMSAPI.Publica",
+          "command": "dotnet run"
+        }
+      ],
+      "browserUrl": null
+    },
+    {
+      "name": "SignalRStudy",
+      "configType": "json",
+      "configFile": "",
+      "gitRepo": "T:\\Developer\\RepositorioTrabalho\\tecbakana\\signalRProj",
+      "solutionPath": "T:\\Developer\\RepositorioTrabalho\\tecbakana\\signalRProj\\SignalRStudy.sln",
+      "desktop": 1,
+      "batchOpen": null,
+      "clients": [
+        "default"
+      ],
+      "runTargets": [
+        {
+          "name": "SignalRStudy.Server",
+          "dir": "T:\\Developer\\RepositorioTrabalho\\tecbakana\\signalRProj\\src\\SignalRStudy.Server",
+          "command": "dotnet run"
+        }
+      ],
+      "browserUrl": "http://localhost:5006"
+    },
+    {
+      "name": "Forge",
+      "configType": "json",
+      "configFile": "",
+      "gitRepo": "T:\\Developer\\RepositorioTrabalho\\tecbakana\\ForgeV2",
+      "solutionPath": "T:\\Developer\\RepositorioTrabalho\\tecbakana\\ForgeV2\\Forge.sln",
+      "desktop": 1,
+      "batchOpen": null,
+      "clients": [
+        "default"
+      ],
+      "runTargets": [
+        {
+          "name": "DevAutomation.Server",
+          "dir": "T:\\Developer\\RepositorioTrabalho\\tecbakana\\ForgeV2\\src\\DevAutomation.Server",
+          "command": "dotnet run"
+        }
+      ],
+      "browserUrl": "http://localhost:8080"
+    },
+    {
+      "name": "Multipl.AI",
+      "configType": "json",
+      "configFile": "",
+      "gitRepo": "T:\\Developer\\RepositorioTrabalho\\tecbakana\\cmsx",
+      "solutionPath": "T:\\Developer\\RepositorioTrabalho\\tecbakana\\cmsx\\CMSX.sln",
+      "desktop": 1,
+      "batchOpen": null,
+      "clients": [
+        "default"
+      ],
+      "runTargets": [
+        {
+          "name": "CMSAPI",
+          "dir": "T:\\Developer\\RepositorioTrabalho\\tecbakana\\cmsx\\CMSAPI",
+          "command": "dotnet run"
+        },
+        {
+          "name": "CMSAPI.Publica",
+          "dir": "T:\\Developer\\RepositorioTrabalho\\tecbakana\\cmsx\\CMSAPI.Publica",
+          "command": "dotnet run"
+        },
+        {
+          "name": "CMSUI",
+          "dir": "T:\\Developer\\RepositorioTrabalho\\tecbakana\\cmsx\\CMSUI",
+          "command": "dotnet run"
+        },
+        {
+          "name": "PublicUI",
+          "dir": "T:\\Developer\\RepositorioTrabalho\\tecbakana\\cmsx\\PublicUI",
+          "command": "dotnet run"
+        }
+      ],
+      "browserUrl": "http://localhost:5124"
+    },
+    {
+      "name": "markethub",
+      "configType": "json",
+      "configFile": "",
+      "gitRepo": "T:\\Developer\\RepositorioTrabalho\\tecbakana\\markethub",
+      "solutionPath": "",
+      "desktop": 1,
+      "batchOpen": null,
+      "clients": [
+        "default"
+      ],
+      "runTargets": [],
       "browserUrl": null
     }
   ],

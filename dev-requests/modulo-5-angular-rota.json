@@ -1,0 +1,22 @@
+﻿{
+    "id":  "modulo-5-angular-rota",
+    "api":  "cmsx",
+    "tipo":  "feature",
+    "impacto":  "baixo",
+    "descricao":  "CMSUI — registrar ModuloComponent no AppModule e adicionar rota",
+    "detalhes":  "Registrar o componente criado em modulo-4 no módulo raiz da aplicação Angular.\n\n**Pré-requisito:** modulo-4-angular-componente concluído.\n\n**Arquivo alvo:** `T:\\Developer\\RepositorioTrabalho\\tecbakana\\cmsx\\CMSUI\\ClientApp\\src\\app\\app.module.ts`\n\n**Alterações necessárias:**\n\n1. Import no topo do arquivo:\n```typescript\nimport { ModuloComponent } from \u0027./modulo/modulo.component\u0027;\n```\n\n2. Adicionar em `declarations`:\n```typescript\nModuloComponent,\n```\n\n3. Adicionar rota (dentro do array de rotas do `RouterModule.forRoot`):\n```typescript\n{ path: \u0027modulos-admin\u0027, component: ModuloComponent },\n```\nUsar o path `modulos-admin` para não colidir com o endpoint `modulos` da API e deixar claro que é tela admin.\n\n**Regras obrigatórias:**\n- Não alterar nenhuma outra rota ou declaração existente\n- Não criar módulo lazy-loaded — o componente é simples e vai direto no AppModule\n- Verificar que o projeto Angular compila sem erros após a alteração (`ng build` ou equivalente no pipeline)",
+    "url_externa":  null,
+    "status":  "done",
+    "impeditivo":  false,
+    "resultado":  "Path corrigido para modulos-admin em 2026-05-10 (junto com modulo-4). Aviso infra_sem_testcontainers ja registrado como task separada.",
+    "prompt_agente":  null,
+    "diretorio_alvo":  "T:\\Developer\\RepositorioTrabalho\\tecbakana\\cmsx\\CMSUI",
+    "timestamp":  "2026-05-09T00:00:00Z",
+    "pendencias":  null,
+    "resposta_usuario":  null,
+    "comentarios_teste":  null,
+    "timestamp_atualizacao":  "2026-05-10T14:31:43.4551348-03:00",
+    "resultado_revisao":  "{\"aprovado\":false,\"resumo\":\"ModuloComponent corretamente importado, declarado em declarations e ModulosController.cs completo e arquiteturalmente limpo (sem CMSXData.Models, sem entidade no controller, async em todos os métodos, delegação correta via interface). Porém a rota Angular foi adicionada com path \u0027modulos\u0027 em vez do path \u0027modulos-admin\u0027 exigido explicitamente pela task.\",\"url_teste\":\"/modulos-admin\",\"violacoes\":[{\"regra\":\"Usar o path \u0027modulos-admin\u0027 para não colidir com o endpoint \u0027modulos\u0027 da API e deixar claro que é tela admin.\",\"arquivo\":\"CMSUI/ClientApp/src/app/app.module.ts\",\"linha\":82,\"encontrado\":\"{ path: \u0027modulos\u0027, component: ModuloComponent }\",\"esperado\":\"{ path: \u0027modulos-admin\u0027, component: ModuloComponent }\"}],\"avisos\":[{\"tipo\":\"infra_sem_testcontainers\",\"mensagem\":\"ModulosController.cs ganhou endpoints POST/PUT/DELETE que exercitam CriarAsync, AtualizarAsync e RemoverAsync do ModuloRepositorio. Os testes de integração não foram executados nesta task. Conforme política de cobertura obrigatória para novas classes em CMSXRepo, uma task de cobertura deve ser aberta descrevendo os cenários: criar modulo persiste e retorna id gerado; atualizar retorna false para id inexistente; remover deleta do banco sem efeito colateral em outras entidades.\",\"arquivos\":[\"CMSAPI/Controllers/ModulosController.cs\",\"CMSXRepo/ModuloRepositorio.cs\"]}]}\n",
+    "url_teste":  "/modulos-admin",
+    "consideracoes_refazer":  null
+}

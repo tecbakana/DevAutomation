@@ -1,0 +1,59 @@
+{
+  "id": "vitrine-canonico-4-controller-gerar",
+  "api": "cmsx",
+  "tipo": "feature",
+  "impacto": "alto",
+  "descricao": "VitrineController: aplicar Tipo/Estilo/Paleta/TemaCanonicoJson no gerador \u002B expor CanonicalArea no SiteController",
+  "detalhes": "Duas mudan\u00E7as em CMSAPI:\n\n## 1. VitrineController \u2014 POST /vitrine/area/{areaId}/gerar\n\n**Arquivo:** \u0060T:\\Developer\\RepositorioTrabalho\\tecbakana\\cmsx\\CMSAPI\\Controllers\\VitrineController.cs\u0060\n\nO m\u00E9todo \u0060GerarArea\u0060 monta o \u0060contexto\u0060 que \u00E9 passado ao system prompt. Atualmente:\n\u0060\u0060\u0060csharp\nvar contexto = $\u0022Nome: {app?.Nome ?? \u0022Site\u0022}\\nSegmento: {segmento}\\nPedido: {input.Prompt}\u0022;\n\u0060\u0060\u0060\n\nNovo comportamento \u2014 enriquecer o contexto com os campos opcionais:\n\u0060\u0060\u0060csharp\nvar sb = new System.Text.StringBuilder();\nsb.AppendLine($\u0022Nome: {app?.Nome ?? \u0022Site\u0022}\u0022);\nsb.AppendLine($\u0022Segmento: {segmento}\u0022);\nif (!string.IsNullOrEmpty(input.Tipo))\n    sb.AppendLine($\u0022Tipo de p\u00E1gina: {input.Tipo}\u0022);\nif (!string.IsNullOrEmpty(input.Estilo))\n    sb.AppendLine($\u0022Estilo visual: {input.Estilo}\u0022);\nif (!string.IsNullOrEmpty(input.Paleta))\n    sb.AppendLine($\u0022Paleta de cores: {input.Paleta}\u0022);\nif (!string.IsNullOrEmpty(input.TemaCanonicoJson))\n    sb.AppendLine($\u0022Tema can\u00F4nico (preservar estas propriedades de cores e tipografia): {input.TemaCanonicoJson}\u0022);\nsb.AppendLine($\u0022Pedido: {input.Prompt}\u0022);\nvar contexto = sb.ToString();\n\u0060\u0060\u0060\n\n---\n\n## 2. SiteController \u2014 BuildSiteData: expor CanonicalArea por \u00E1rea\n\n**Arquivo:** \u0060T:\\Developer\\RepositorioTrabalho\\tecbakana\\cmsx\\CMSAPI\\Controllers\\SiteController.cs\u0060\n\nNo m\u00E9todo \u0060BuildSiteData()\u0060 (ou equivalente que constr\u00F3i o array de \u00E1reas retornado ao frontend), adicionar o campo \u0060canonicalArea\u0060 no objeto an\u00F4nimo de cada \u00E1rea. Localizar o bloco que mapeia cada \u00E1rea e incluir:\n\u0060\u0060\u0060csharp\ncanonicalArea = area.CanonicalArea,\n\u0060\u0060\u0060\n\nIsso permite que o frontend Angular identifique qual \u00E1rea possui o tema can\u00F4nico e extraia o \u0060TemaCanonicoJson\u0060 dela sem precisar de endpoint adicional.\n\n**Observa\u00E7\u00F5es:**\n- N\u00E3o alterar a assinatura do m\u00E9todo \u0060BuildSiteData\u0060 nem quebrar outros campos j\u00E1 expostos.\n- O campo \u0060CanonicalArea\u0060 \u00E9 somente-leitura no frontend \u2014 n\u00E3o h\u00E1 endpoint de escrita direta.\n- \u0060TemaCanonicoJson\u0060 no contexto do gerador \u00E9 o JSON string do \u0060TemaConfig\u0060 serializado (ex: \u0060{\u0022corPrimaria\u0022:\u0022#e67e22\u0022,...}\u0060). O frontend extrai de \u0060area.vitrineValoresJson\u0060 da \u00E1rea can\u00F4nica antes de chamar o gerar.",
+  "url_externa": null,
+  "status": "done",
+  "impeditivo": false,
+  "resultado": "=== CAMADA: API ===\r\nAmbas as mudan\u00E7as j\u00E1 est\u00E3o implementadas:\n\n**VitrineController.cs** (linhas 140\u2013152): o \u0060StringBuilder\u0060 com as linhas condicionais para \u0060Tipo\u0060, \u0060Estilo\u0060, \u0060Paleta\u0060 e \u0060TemaCanonicoJson\u0060 j\u00E1 est\u00E1 no \u0060GerarArea\u0060.\n\n**SiteController.cs** (linha 73): \u0060canonicalArea = area.CanonicalArea\u0060 j\u00E1 consta no objeto an\u00F4nimo do \u0060areasResult.Add(...)\u0060.\n\nNenhuma altera\u00E7\u00E3o necess\u00E1ria \u2014 os dois arquivos j\u00E1 refletem exatamente a spec da tarefa.\n\r\n\r\n=== CAMADA: FRONTEND ===\r\nTudo correto. Resumo do que foi encontrado e feito:\n\n**\u0060vitrine-admin.service.ts\u0060** \u2014 j\u00E1 estava completo desde sess\u00E3o anterior. Nenhuma altera\u00E7\u00E3o necess\u00E1ria.\n\n**\u0060vitrine.component.ts\u0060** \u2014 l\u00F3gica de \u0060canonicalArea\u0060 \u002B \u0060_buildTemaCanonicoJson()\u0060 \u002B passagem de \u0060tipo/estilo/paleta/temaCanonicoJson\u0060 para \u0060gerarArea()\u0060 j\u00E1 estava implementada.\n\n**\u0060vitrine.component.html\u0060** \u2014 \u00FAnico gap real: o componente tinha os arrays e vari\u00E1veis de Tipo/Estilo/Paleta mas sem binding na UI. Adicionados tr\u00EAs grupos de chips (toggle) antes da textarea, com comportamento deselect ao clicar no chip ativo. O payload enviado ao \u0060POST /vitrine/area/{id}/gerar\u0060 j\u00E1 transportava esses campos condicionalmente via \u0060|| undefined\u0060.\n\nA feature est\u00E1 completa fim a fim: usu\u00E1rio seleciona chips opcionais \u2192 \u0060gerarComIA()\u0060 resolve o tema can\u00F4nico da \u00E1rea can\u00F4nica do tenant \u2192 manda tudo no payload para o backend enriquecer o system prompt da IA.\n\r\n\r\n",
+  "prompt_agente": null,
+  "diretorio_alvo": "T:\\Developer\\RepositorioTrabalho\\tecbakana\\cmsx\\CMSAPI",
+  "timestamp": "2026-05-17T00:00:00Z",
+  "pendencias": null,
+  "dependencias": [
+    "vitrine-canonico-2-contratos",
+    "vitrine-canonico-3-publicar-flag"
+  ],
+  "bloqueado": false,
+  "resposta_usuario": null,
+  "comentarios_teste": null,
+  "timestamp_atualizacao": "2026-05-17T22:58:48.1567645Z",
+  "resultado_revisao": "{\u0022aprovado\u0022:true,\u0022resumo\u0022:\u0022Spec implementada integralmente: GerarArea enriquece o contexto via StringBuilder com Tipo/Estilo/Paleta/TemaCanonicoJson, e SiteController exp\u00F5e canonicalArea no objeto an\u00F4nimo de cada \u00E1rea. Seguran\u00E7a OK \u2014 todos os novos endpoints (BuscaTemplate, BuscaAreaConfigurada, SalvarAreaConfigurada, PublicarArea, GerarArea, RenderArea) validam ownership via claim aplicacaoid antes de qualquer acesso a dado. Mudan\u00E7as al\u00E9m do escopo da spec (slots obrigat\u00F3rios no VitrineAdminController, GerarComSistemaAsync nos agentes, upgrade de modelo, CORS dev origins) n\u00E3o introduzem viola\u00E7\u00F5es arquiteturais mas expandem a superf\u00EDcie da PR al\u00E9m do acordado.\u0022,\u0022url_teste\u0022:\u0022/vitrine/area/{areaId}/gerar\u0022,\u0022violacoes\u0022:[],\u0022avisos\u0022:[{\u0022tipo\u0022:\u0022infraestrutura_no_controller\u0022,\u0022mensagem\u0022:\u0022LerDesignSystemCssAsync() em VitrineController realiza I/O direto em disco via IWebHostEnvironment.WebRootPath. Leitura de artefatos est\u00E1ticos de infraestrutura \u00E9 responsabilidade de uma camada de servi\u00E7o (ex: IDesignSystemProvider injet\u00E1vel e mock\u00E1vel), n\u00E3o do controller. O controller est\u00E1 assumindo responsabilidade de infra, violando seu papel de \u0027Orquestra\u00E7\u00E3o \u0026 Seguran\u00E7a\u0027 definido na arquitetura N-Tier \u2014 e impossibilitando mock em testes unit\u00E1rios futuros.\u0022,\u0022arquivos\u0022:[\u0022CMSAPI/Controllers/VitrineController.cs\u0022]},{\u0022tipo\u0022:\u0022infra_sem_testcontainers\u0022,\u0022mensagem\u0022:\u0022VitrineRepositorio.cs consta modificado no git status mas nenhum teste de integra\u00E7\u00E3o via Testcontainers cobre os m\u00E9todos RenderAreaSchemaAsync, SalvarAreaSchemaAsync, BuscaAreaSchemaAsync e PublicarAreaAsync invocados pelos novos endpoints. Esses m\u00E9todos tocam o banco diretamente e s\u00E3o cr\u00EDticos para o fluxo de publica\u00E7\u00E3o.\u0022,\u0022arquivos\u0022:[\u0022CMSXRepo/VitrineRepositorio.cs\u0022,\u0022CMSAPI/Controllers/VitrineController.cs\u0022]},{\u0022tipo\u0022:\u0022codigo_morto\u0022,\u0022mensagem\u0022:\u0022UserContext() adicionado em VitrineAdminController retorna tupla (acessoTotal, aplicacaoid) mas n\u00E3o \u00E9 referenciado em nenhum ponto do diff. C\u00F3digo morto desde o commit \u2014 remover ou aplicar nos m\u00E9todos que ainda chamam IsAdmin() e User.FindFirstValue() separadamente.\u0022,\u0022arquivos\u0022:[\u0022CMSAPI/Controllers/VitrineAdminController.cs\u0022]}]}\n",
+  "url_teste": "/vitrine/area/{areaId}/gerar",
+  "consideracoes_refazer": null,
+  "contratos": {
+    "schema": {
+      "afetada": false,
+      "escopo": "",
+      "artefatos": [],
+      "expoe": ""
+    },
+    "repositorio": {
+      "afetada": false,
+      "escopo": "",
+      "artefatos": [],
+      "expoe": ""
+    },
+    "api": {
+      "afetada": true,
+      "escopo": "1) VitrineController.GerarArea: substituir string interpolada por StringBuilder que adiciona linhas condicionais para Tipo, Estilo, Paleta e TemaCanonicoJson quando presentes no input. 2) SiteController.BuildSiteData: incluir campo canonicalArea (bool) no objeto an\u00F4nimo de cada \u00E1rea mapeada, sem alterar assinatura nem demais campos.",
+      "artefatos": [
+        "CMSAPI/Controllers/VitrineController.cs",
+        "CMSAPI/Controllers/SiteController.cs"
+      ],
+      "expoe": "POST /vitrine/area/{areaId}/gerar: contexto do prompt enriquecido com Tipo/Estilo/Paleta/TemaCanonicoJson quando informados. GET /site (BuildSiteData): payload de \u00E1reas passa a incluir canonicalArea:bool por \u00E1rea."
+    },
+    "frontend": {
+      "afetada": true,
+      "escopo": "Consumir campo canonicalArea nas \u00E1reas retornadas pelo SiteController; localizar a \u00E1rea can\u00F4nica, extrair TemaCanonicoJson de vitrineValoresJson dela e incluir no payload ao chamar POST /vitrine/area/{areaId}/gerar.",
+      "artefatos": [
+        "CMSUI/ClientApp/src/app/vitrine-admin/vitrine-admin.component.ts",
+        "CMSUI/ClientApp/src/app/vitrine-admin/vitrine-admin.service.ts"
+      ],
+      "expoe": ""
+    }
+  }
+}

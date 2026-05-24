@@ -1,0 +1,18 @@
+{
+  "id": "cmsx-pb2-edicao-inplace",
+  "api": "cmsx",
+  "tipo": "feature",
+  "impacto": "medio",
+  "descricao": "CMSX — PB2: edição in-place de texto no canvas",
+  "detalhes": "Permitir que o usuário clique diretamente em um bloco de texto no canvas do PB2 e edite o conteúdo sem abrir o modal. Blocos com configuração complexa (imagens, atributos estruturados) continuam usando o modal.\n\n## Escopo\n\n### Blocos com edição in-place\n\nQualquer bloco cujo `schemaConfig` contenha um campo do tipo `texto`, `textarea` ou `html` como **campo principal** (primeiro campo ou marcado como `principal: true`).\n\nExemplos: `texto`, `titulo`, `chamada`, `paragrafo`.\n\nBlocos que ficam no modal: `banner-imagem`, `galeria`, `hero` (tem múltiplos campos), `produto`.\n\n### Comportamento\n\n1. **Clique simples** no bloco → entra em modo edição in-place\n   - O elemento de texto do bloco recebe `contenteditable=\"true\"`\n   - Borda muda para azul sólido (indicação de edição ativa)\n   - Cursor posicionado no ponto do clique\n\n2. **Blur / clique fora** → sai do modo edição\n   - Salva o novo valor em `bloco.config[campoTexto]`\n   - Chama `salvarSnapshot()` (integração com undo/redo)\n   - Remove `contenteditable`\n\n3. **Clique duplo** → sempre abre o modal completo (para acesso a todos os campos)\n\n4. **Botão de edição (lápis)** no header do bloco → abre modal completo (comportamento atual mantido)\n\n### Implementação Angular\n\n```typescript\n// No template HTML do bloco, para blocos elegíveis:\n<div\n  [attr.contenteditable]=\"blocoEmEdicao === index ? true : null\"\n  (click)=\"iniciarEdicaoInplace($event, index)\"\n  (dblclick)=\"abrirModal(index)\"\n  (blur)=\"finalizarEdicaoInplace($event, index)\"\n  (keydown.escape)=\"cancelarEdicaoInplace(index)\"\n>\n  {{ bloco.config[campoTexto] }}\n</div>\n```\n\n```typescript\niniciarEdicaoInplace(event: MouseEvent, index: number): void {\n  event.stopPropagation(); // não acionar drag\n  this.blocoEmEdicao = index;\n}\n\nfinalizarEdicaoInplace(event: FocusEvent, index: number): void {\n  const el = event.target as HTMLElement;\n  const novoValor = el.innerText.trim();\n  if (novoValor !== this.blocos[index].config[this.getCampoTexto(index)]) {\n    this.salvarSnapshot();\n    this.blocos[index].config[this.getCampoTexto(index)] = novoValor;\n  }\n  this.blocoEmEdicao = null;\n}\n```\n\n### Conflito com drag-drop\n\nQuando `blocoEmEdicao` estiver ativo, desabilitar o `cdkDrag` do bloco correspondente para evitar que o texto selecionado inicie um drag.\n\n```html\n<div cdkDrag [cdkDragDisabled]=\"blocoEmEdicao === index\">\n```\n\n### CSS\n\n```css\n.bloco-em-edicao {\n  border: 2px solid #0d6efd !important;\n  outline: none;\n  cursor: text;\n}\n```",
+  "url_externa": null,
+  "status": "teste",
+  "impeditivo": false,
+  "resultado": null,
+  "prompt_agente": null,
+  "diretorio_alvo": "T:\\Developer\\RepositorioTrabalho\\tecbakana\\cmsx",
+  "timestamp": "2026-05-12T00:00:00Z",
+  "pendencias": null,
+  "resposta_usuario": null,
+  "timestamp_atualizacao": "2026-05-12T00:00:00Z"
+}

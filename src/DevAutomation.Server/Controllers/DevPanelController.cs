@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using System.Text.Json;
 using DevAutomation.Models;
 using DevAutomation.Services;
@@ -20,6 +21,9 @@ public class DevPanelController : ControllerBase
     private readonly ILogger<DevPanelController> _logger;
     private readonly IConfiguration _cfg;
 
+    private static readonly JsonSerializerOptions _jsonWriteOpts = new() { WriteIndented = true };
+    private static readonly JsonSerializerOptions _jsonReadCiOpts = new() { PropertyNameCaseInsensitive = true };
+
     public DevPanelController(
         ConfigService config,
         GeminiService gemini,
@@ -39,6 +43,12 @@ public class DevPanelController : ControllerBase
         _switchScript = cfg["DevAutomation:SwitchScript"]!;
         _logger       = logger;
     }
+
+    // ── HEALTH ────────────────────────────────────────────────────────────────
+
+    [HttpGet("health")]
+    public IActionResult Health() =>
+        Ok(new { status = "ok", timestamp = DateTime.UtcNow.ToString("O") });
 
     // ── CONFIG ────────────────────────────────────────────────────────────────
 
@@ -391,7 +401,7 @@ public class DevPanelController : ControllerBase
                     Directory.CreateDirectory(devReqDir);
                     System.IO.File.WriteAllText(devReqPath,
                         System.Text.Json.JsonSerializer.Serialize(devReq,
-                            new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
+                            _jsonWriteOpts));
                     result = new { mensagem = "Solicitação registrada com sucesso.", id = devReq.Id };
                     break;
 
@@ -457,11 +467,11 @@ public class DevPanelController : ControllerBase
         Directory.CreateDirectory(devReqDir);
         var path = Path.Combine(devReqDir, $"{devReq.Id}.json");
         System.IO.File.WriteAllText(path,
-            JsonSerializer.Serialize(devReq, new JsonSerializerOptions { WriteIndented = true }));
+            JsonSerializer.Serialize(devReq, _jsonWriteOpts));
 
         // Atualiza status do item para in_progress
         item["status"] = "in_progress";
-        System.IO.File.WriteAllText(projectsPath, root.ToJsonString(new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
+        System.IO.File.WriteAllText(projectsPath, root.ToJsonString(_jsonWriteOpts));
 
         return Ok(new { success = true, devRequestId = devReq.Id });
     }
@@ -489,7 +499,7 @@ public class DevPanelController : ControllerBase
             return NotFound(new { success = false, error = "Item de roadmap não encontrado" });
 
         item["status"] = body.Status;
-        System.IO.File.WriteAllText(projectsPath, root.ToJsonString(new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
+        System.IO.File.WriteAllText(projectsPath, root.ToJsonString(_jsonWriteOpts));
 
         return Ok(new { success = true });
     }
@@ -513,7 +523,7 @@ public class DevPanelController : ControllerBase
         Directory.CreateDirectory(dir);
 
         var path = Path.Combine(dir, $"{request.Id}.json");
-        System.IO.File.WriteAllText(path, JsonSerializer.Serialize(request, new JsonSerializerOptions { WriteIndented = true }));
+        System.IO.File.WriteAllText(path, JsonSerializer.Serialize(request, _jsonWriteOpts));
 
         return Ok(new { success = true, id = request.Id });
     }
@@ -528,7 +538,7 @@ public class DevPanelController : ControllerBase
             return NotFound(new { success = false, error = "Dev request não encontrada." });
 
         var json = System.IO.File.ReadAllText(path);
-        var req  = JsonSerializer.Deserialize<DevRequest>(json, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+        var req  = JsonSerializer.Deserialize<DevRequest>(json, _jsonReadCiOpts);
         if (req is null)
             return BadRequest(new { success = false, error = "JSON inválido." });
 
@@ -538,10 +548,11 @@ public class DevPanelController : ControllerBase
         req.Descricao            = body.Descricao ?? req.Descricao;
         req.Detalhes             = body.Detalhes ?? req.Detalhes;
         req.DiretorioAlvo        = body.DiretorioAlvo ?? req.DiretorioAlvo;
-        req.ComentariosTeste     = body.ComentariosTeste ?? req.ComentariosTeste;
+        req.ComentariosTeste        = body.ComentariosTeste ?? req.ComentariosTeste;
+        req.ConsideracoesRefazer    = body.ConsideracoesRefazer ?? req.ConsideracoesRefazer;
         req.TimestampAtualizacao = DateTime.UtcNow;
 
-        System.IO.File.WriteAllText(path, JsonSerializer.Serialize(req, new JsonSerializerOptions { WriteIndented = true }));
+        System.IO.File.WriteAllText(path, JsonSerializer.Serialize(req, _jsonWriteOpts));
 
         return Ok(new { success = true });
     }
@@ -563,7 +574,7 @@ public class DevPanelController : ControllerBase
             return NotFound(new { success = false, error = "Dev request não encontrada." });
 
         var json = System.IO.File.ReadAllText(path);
-        var req  = JsonSerializer.Deserialize<DevRequest>(json, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+        var req  = JsonSerializer.Deserialize<DevRequest>(json, _jsonReadCiOpts);
         if (req is null)
             return BadRequest(new { success = false, error = "JSON inválido." });
 
@@ -571,7 +582,7 @@ public class DevPanelController : ControllerBase
         req.Status               = "pendente";
         req.TimestampAtualizacao = DateTime.UtcNow;
 
-        System.IO.File.WriteAllText(path, JsonSerializer.Serialize(req, new JsonSerializerOptions { WriteIndented = true }));
+        System.IO.File.WriteAllText(path, JsonSerializer.Serialize(req, _jsonWriteOpts));
 
         return Ok(new { success = true });
     }
@@ -599,10 +610,11 @@ public class DevPanelController : ControllerBase
     }
 
     [HttpGet("rag/search")]
-    public async Task<IActionResult> RagSearch([FromQuery] string q, [FromQuery] int limit = 5, [FromQuery] string? project = null)
+    public async Task<IActionResult> RagSearch([FromQuery] string q, [FromQuery] int limit = 5, [FromQuery] string? project = null, [FromQuery] string? tipo = null)
     {
-        var filtros = project != null ? new[] { project } : null;
-        var chunks  = await _ragService.QueryAsync(q, limit, filtros);
+        var filtrosProjeto = project != null ? new[] { project } : null;
+        var filtrosTipo    = tipo    != null ? new[] { tipo }    : null;
+        var chunks  = await _ragService.QueryAsync(q, limit, filtrosProjeto, filtrosTipo);
         return Ok(chunks.Select(c => new
         {
             c.Fonte,
@@ -610,6 +622,30 @@ public class DevPanelController : ControllerBase
             c.Tipo,
             conteudo = c.Conteudo[..Math.Min(300, c.Conteudo.Length)]
         }));
+    }
+
+    // ── OTEL DIAGNOSTIC ──────────────────────────────────────��───────────────
+
+    [HttpGet("otel/diag")]
+    public IActionResult OtelDiag()
+    {
+        var source = new System.Diagnostics.ActivitySource("Forge.SoftwareFactory.Core");
+        var hasListeners = source.HasListeners();
+        using var activity = source.StartActivity("DiagnosticProbe");
+
+        var pubKey  = _cfg["Langfuse:PublicKey"] ?? "";
+        var secKey  = _cfg["Langfuse:SecretKey"] ?? "";
+        var baseUrl = _cfg["Langfuse:BaseUrl"] ?? "https://cloud.langfuse.com";
+
+        return Ok(new
+        {
+            hasListeners,
+            activityCreated   = activity != null,
+            activityId        = activity?.Id,
+            langfuseEnabled   = !string.IsNullOrEmpty(pubKey) && !string.IsNullOrEmpty(secKey),
+            langfuseEndpoint  = $"{baseUrl}/api/public/otel/v1/traces",
+            langfusePublicKey = pubKey.Length > 0 ? pubKey[..Math.Min(8, pubKey.Length)] + "..." : "(não configurado)"
+        });
     }
 
     // ── HELPERS ───────────────────────────────────────────────────────────────
@@ -672,14 +708,32 @@ public class DevPanelController : ControllerBase
 
     private static string EscapeArg(string s) => s.Replace("\"", "\\\"");
 
+    [HttpPost("stop-apps")]
+    public async Task<IActionResult> StopApps([FromBody] StartAppsRequest body)
+    {
+        var cfg = _config.LoadConfig();
+        var api = cfg.Apis.FirstOrDefault(a => string.Equals(a.Name, body.Api, StringComparison.OrdinalIgnoreCase));
+        if (api is null) return NotFound(new { message = $"API '{body.Api}' não encontrada." });
+        if (api.RunTargets is null || api.RunTargets.Count == 0)
+            return Ok(new { message = "Nenhum runTarget para parar." });
+
+        var killed = KillDotnetInTargets(api.RunTargets.Select(t => t.Dir).ToList());
+        await Task.Delay(500);
+        return Ok(new { message = $"{killed} processo(s) encerrado(s).", targets = api.RunTargets.Select(t => t.Name) });
+    }
+
     [HttpPost("start-apps")]
-    public IActionResult StartApps([FromBody] StartAppsRequest body)
+    public async Task<IActionResult> StartApps([FromBody] StartAppsRequest body)
     {
         var cfg = _config.LoadConfig();
         var api = cfg.Apis.FirstOrDefault(a => string.Equals(a.Name, body.Api, StringComparison.OrdinalIgnoreCase));
         if (api is null) return NotFound(new { message = $"API '{body.Api}' não encontrada." });
         if (api.RunTargets is null || api.RunTargets.Count == 0)
             return BadRequest(new { message = "Nenhum runTarget configurado para esta API." });
+
+        // Mata processos anteriores (dotnet + node filhos) e aguarda liberação das portas
+        KillDotnetInTargets(api.RunTargets.Select(t => t.Dir).ToList());
+        await Task.Delay(2000);
 
         foreach (var target in api.RunTargets)
         {
@@ -693,13 +747,194 @@ public class DevPanelController : ControllerBase
         }
 
         if (!string.IsNullOrEmpty(api.BrowserUrl))
+        {
             System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
             {
                 FileName = api.BrowserUrl,
                 UseShellExecute = true
             });
+        }
 
         return Ok(new { message = $"{api.RunTargets.Count} terminal(is) aberto(s).", targets = api.RunTargets.Select(t => t.Name) });
+    }
+
+    private static int KillDotnetInTargets(List<string> targetDirs)
+    {
+        int killed = 0;
+
+        // Mata dotnet pelo working directory (command line não inclui o path quando é só "dotnet run")
+        foreach (var proc in System.Diagnostics.Process.GetProcessesByName("dotnet"))
+        {
+            try
+            {
+                var cmdLine = GetProcessCommandLine(proc.Id);
+                var workDir = GetProcessWorkingDirectory(proc.Id);
+                if (targetDirs.Any(dir =>
+                    cmdLine.Contains(dir, StringComparison.OrdinalIgnoreCase) ||
+                    workDir.Contains(dir, StringComparison.OrdinalIgnoreCase)))
+                {
+                    proc.Kill(entireProcessTree: true);
+                    killed++;
+                }
+            }
+            catch { }
+            finally { proc.Dispose(); }
+        }
+
+        // Mata node órfãos (ng serve) cujo command line contenha o path do projeto
+        foreach (var proc in System.Diagnostics.Process.GetProcessesByName("node"))
+        {
+            try
+            {
+                var cmdLine = GetProcessCommandLine(proc.Id);
+                if (targetDirs.Any(dir => cmdLine.Contains(dir, StringComparison.OrdinalIgnoreCase)))
+                {
+                    proc.Kill(entireProcessTree: true);
+                    killed++;
+                }
+            }
+            catch { }
+            finally { proc.Dispose(); }
+        }
+
+        return killed;
+    }
+
+    private static string GetProcessCommandLine(int pid)
+    {
+        try
+        {
+            var psi = new System.Diagnostics.ProcessStartInfo("wmic",
+                $"process where ProcessId={pid} get CommandLine /format:list")
+            {
+                RedirectStandardOutput = true,
+                UseShellExecute        = false,
+                CreateNoWindow         = true
+            };
+            using var p = System.Diagnostics.Process.Start(psi)!;
+            var output = p.StandardOutput.ReadToEnd();
+            p.WaitForExit(3000);
+            return output;
+        }
+        catch { return ""; }
+    }
+
+    private static string GetProcessWorkingDirectory(int pid)
+    {
+        try
+        {
+            var psi = new ProcessStartInfo("wmic",
+                $"process where ProcessId={pid} get WorkingDirectory /format:list")
+            {
+                RedirectStandardOutput = true,
+                UseShellExecute        = false,
+                CreateNoWindow         = true
+            };
+            using var p = Process.Start(psi)!;
+            var output = p.StandardOutput.ReadToEnd();
+            p.WaitForExit(3000);
+            return output;
+        }
+        catch { return ""; }
+    }
+
+    [HttpPost("projects/discover")]
+    public IActionResult DiscoverProject([FromBody] DiscoverProjectRequest body)
+    {
+        var path = body.Path?.Trim();
+        if (string.IsNullOrEmpty(path) || !Directory.Exists(path))
+            return BadRequest(new { error = "Caminho inválido ou não encontrado." });
+
+        // Git root
+        var gitRoot = RunGit("rev-parse --show-toplevel", path).Trim().Replace('/', Path.DirectorySeparatorChar);
+        if (string.IsNullOrEmpty(gitRoot)) gitRoot = path;
+
+        // .sln — procura na raiz git primeiro, depois sobe
+        var slnFiles = Directory.GetFiles(gitRoot, "*.sln", SearchOption.AllDirectories)
+            .Where(f => !f.Contains(Path.DirectorySeparatorChar + "obj" + Path.DirectorySeparatorChar)
+                     && !f.Contains(Path.DirectorySeparatorChar + "bin" + Path.DirectorySeparatorChar))
+            .OrderBy(f => f.Length)
+            .ToList();
+        var solutionPath = slnFiles.FirstOrDefault();
+
+        // Web .csproj → runTargets + browserUrl
+        var runTargets = new List<RunTargetDto>();
+        string? browserUrl = null;
+
+        var csprojFiles = Directory.GetFiles(gitRoot, "*.csproj", SearchOption.AllDirectories)
+            .Where(f => !f.Contains(Path.DirectorySeparatorChar + "obj" + Path.DirectorySeparatorChar)
+                     && !f.Contains(Path.DirectorySeparatorChar + "bin" + Path.DirectorySeparatorChar))
+            .ToList();
+
+        foreach (var csproj in csprojFiles)
+        {
+            try
+            {
+                var content = System.IO.File.ReadAllText(csproj);
+                if (!content.Contains("Microsoft.NET.Sdk.Web")) continue;
+
+                var dir  = Path.GetDirectoryName(csproj)!;
+                var name = Path.GetFileNameWithoutExtension(csproj);
+                runTargets.Add(new RunTargetDto(name, dir, "dotnet run"));
+
+                if (browserUrl is null)
+                {
+                    var launchSettings = Path.Combine(dir, "Properties", "launchSettings.json");
+                    if (System.IO.File.Exists(launchSettings))
+                    {
+                        var ls = JsonSerializer.Deserialize<JsonElement>(System.IO.File.ReadAllText(launchSettings));
+                        if (ls.TryGetProperty("profiles", out var profiles))
+                        {
+                            foreach (var profile in profiles.EnumerateObject())
+                            {
+                                if (profile.Value.TryGetProperty("applicationUrl", out var urlProp))
+                                {
+                                    var urls = urlProp.GetString()?.Split(';');
+                                    browserUrl = urls?.FirstOrDefault(u => u.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+                                                 ?? urls?.FirstOrDefault();
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            catch { }
+        }
+
+        // Angular — detecta package.json com @angular/core
+        var packageJsonFiles = Directory.GetFiles(gitRoot, "package.json", SearchOption.AllDirectories)
+            .Where(f => !f.Contains(Path.DirectorySeparatorChar + "node_modules" + Path.DirectorySeparatorChar))
+            .ToList();
+
+        foreach (var pkg in packageJsonFiles)
+        {
+            try
+            {
+                var doc = JsonSerializer.Deserialize<JsonElement>(System.IO.File.ReadAllText(pkg));
+                if (doc.TryGetProperty("dependencies", out var deps) && deps.TryGetProperty("@angular/core", out _))
+                {
+                    var dir = Path.GetDirectoryName(pkg)!;
+                    runTargets.Add(new RunTargetDto("Angular", dir, "npm start"));
+                }
+            }
+            catch { }
+        }
+
+        var proposedName = solutionPath != null
+            ? Path.GetFileNameWithoutExtension(solutionPath)
+            : Path.GetFileName(gitRoot.TrimEnd(Path.DirectorySeparatorChar));
+
+        return Ok(new
+        {
+            name         = proposedName,
+            configType   = "json",
+            configFile   = "",
+            gitRepo      = gitRoot,
+            solutionPath = solutionPath ?? "",
+            browserUrl   = browserUrl ?? "",
+            runTargets
+        });
     }
 
     [HttpPost("apps/register")]
@@ -719,6 +954,7 @@ public class DevPanelController : ControllerBase
             GitRepo      = body.GitRepo ?? "",
             SolutionPath = body.SolutionPath,
             Desktop      = body.Desktop > 0 ? body.Desktop : 1,
+            BrowserUrl   = string.IsNullOrWhiteSpace(body.BrowserUrl) ? null : body.BrowserUrl,
             RunTargets   = body.RunTargets?.Select(r => new RunTarget { Name = r.Name, Dir = r.Dir, Command = r.Command }).ToList()
         });
 
@@ -759,13 +995,67 @@ public class DevPanelController : ControllerBase
         _config.SaveConfig(cfg);
         return Ok(new { success = true });
     }
+
+    [DllImport("user32.dll")] private static extern bool SetForegroundWindow(IntPtr hWnd);
+    [DllImport("user32.dll")] private static extern bool BringWindowToTop(IntPtr hWnd);
+    [DllImport("user32.dll")] private static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, UIntPtr dwExtraInfo);
+
+    // ── BROWSE ────────────────────────────────────────────────────────────────
+
+    [HttpGet("browse")]
+    public IActionResult Browse([FromQuery] string type = "folder", [FromQuery] string? filter = null)
+    {
+        string? selectedPath = null;
+
+        var thread = new Thread(() =>
+        {
+            using var owner = new System.Windows.Forms.Form
+            {
+                TopMost          = true,
+                StartPosition    = System.Windows.Forms.FormStartPosition.Manual,
+                Location         = new System.Drawing.Point(-2000, -2000),
+                Size             = new System.Drawing.Size(1, 1),
+                ShowInTaskbar    = false
+            };
+            owner.Show();
+
+            // keybd_event(ALT down/up) engana o Windows para permitir SetForegroundWindow
+            // sem precisar de AttachThreadInput (que causa deadlock com o browser).
+            keybd_event(0x12, 0, 0, UIntPtr.Zero);
+            keybd_event(0x12, 0, 0x0002, UIntPtr.Zero);
+            SetForegroundWindow(owner.Handle);
+            BringWindowToTop(owner.Handle);
+
+            if (type == "file")
+            {
+                using var dlg = new System.Windows.Forms.OpenFileDialog();
+                if (!string.IsNullOrWhiteSpace(filter)) dlg.Filter = filter;
+                dlg.CheckFileExists = true;
+                if (dlg.ShowDialog(owner) == System.Windows.Forms.DialogResult.OK)
+                    selectedPath = dlg.FileName;
+            }
+            else
+            {
+                using var dlg = new System.Windows.Forms.FolderBrowserDialog();
+                dlg.UseDescriptionForTitle = true;
+                dlg.Description = "Selecione a pasta";
+                if (dlg.ShowDialog(owner) == System.Windows.Forms.DialogResult.OK)
+                    selectedPath = dlg.SelectedPath;
+            }
+        });
+        thread.SetApartmentState(ApartmentState.STA);
+        thread.Start();
+        thread.Join();
+
+        return Ok(new { path = selectedPath });
+    }
 }
 
 // ── REQUEST MODELS ────────────────────────────────────────────────────────────
 
 public record DevRequestActionBody(string? Id, string? Api, string? Action);
 public record DevRequestResponderBody(string? Id, string? Resposta);
-public record DevRequestEditBody(string? Api, string? Tipo, string? Impacto, string? Descricao, string? Detalhes, string? DiretorioAlvo, string? ComentariosTeste);
+public record DevRequestEditBody(string? Api, string? Tipo, string? Impacto, string? Descricao, string? Detalhes, string? DiretorioAlvo, string? ComentariosTeste, string? ConsideracoesRefazer);
 public record StartAppsRequest(string Api);
 
 public record SwitchRequest
@@ -781,7 +1071,7 @@ public record SwitchRequest
 public record SaveTemplateRequest(string Api, string Env, string? Client, string? Content);
 public record GitCommitRequest(string Api, string? Message);
 public record RunTargetDto(string Name, string Dir, string Command);
-public record RegisterAppRequest(string Name, string? ConfigType, string? ConfigFile, string? GitRepo, string? SolutionPath, int Desktop, List<RunTargetDto>? RunTargets);
+public record RegisterAppRequest(string Name, string? ConfigType, string? ConfigFile, string? GitRepo, string? SolutionPath, int Desktop, List<RunTargetDto>? RunTargets, string? BrowserUrl);
 public record UnregisterAppRequest(string Name);
 public record UpdateAppRequest(string Name, string? ConfigType, string? ConfigFile, string? GitRepo, string? SolutionPath, int Desktop, List<RunTargetDto>? RunTargets);
 public record GitApiRequest(string Api);
@@ -803,3 +1093,4 @@ public class AgentHistoryItem
 
 public record RoadmapPromoteRequest(string ProjectId, string RoadmapItemId);
 public record RoadmapStatusRequest(string ProjectId, string RoadmapItemId, string Status);
+public record DiscoverProjectRequest(string? Path);

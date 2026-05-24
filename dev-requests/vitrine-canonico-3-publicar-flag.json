@@ -1,0 +1,55 @@
+{
+  "id": "vitrine-canonico-3-publicar-flag",
+  "api": "cmsx",
+  "tipo": "feature",
+  "impacto": "medio",
+  "descricao": "VitrineRepositorio.PublicarAreaAsync: marcar CanonicalArea se nenhuma existir",
+  "detalhes": "Atualizar \u0060PublicarAreaAsync\u0060 no \u0060VitrineRepositorio\u0060 para setar \u0060CanonicalArea = true\u0060 automaticamente quando nenhuma outra \u00E1rea da aplica\u00E7\u00E3o j\u00E1 tiver essa flag.\n\n**Arquivo a editar:** \u0060T:\\Developer\\RepositorioTrabalho\\tecbakana\\cmsx\\CMSXRepo\\VitrineRepositorio.cs\u0060\n\nImplementa\u00E7\u00E3o atual:\n\u0060\u0060\u0060csharp\npublic async Task\u003Cbool\u003E PublicarAreaAsync(string areaId, string htmlSnapshot)\n{\n    var area = await _db.Areas.FirstOrDefaultAsync(a =\u003E a.Areaid == areaId);\n    if (area is null) return false;\n    area.VitrineHtmlSnapshot = htmlSnapshot;\n    area.VitrinePublicado = true;\n    await _db.SaveChangesAsync();\n    return true;\n}\n\u0060\u0060\u0060\n\nImplementa\u00E7\u00E3o nova \u2014 adicionar l\u00F3gica de canonical ap\u00F3s as duas atribui\u00E7\u00F5es existentes:\n\u0060\u0060\u0060csharp\npublic async Task\u003Cbool\u003E PublicarAreaAsync(string areaId, string htmlSnapshot)\n{\n    var area = await _db.Areas.FirstOrDefaultAsync(a =\u003E a.Areaid == areaId);\n    if (area is null) return false;\n\n    area.VitrineHtmlSnapshot = htmlSnapshot;\n    area.VitrinePublicado = true;\n\n    if (!area.CanonicalArea \u0026\u0026 !string.IsNullOrEmpty(area.Aplicacaoid))\n    {\n        var jaTemCanonica = await _db.Areas\n            .AnyAsync(a =\u003E a.Aplicacaoid == area.Aplicacaoid \u0026\u0026 a.CanonicalArea);\n        if (!jaTemCanonica)\n            area.CanonicalArea = true;\n    }\n\n    await _db.SaveChangesAsync();\n    return true;\n}\n\u0060\u0060\u0060\n\n**Regras de neg\u00F3cio:**\n- Se j\u00E1 existe outra \u00E1rea da mesma aplica\u00E7\u00E3o com \u0060CanonicalArea = true\u0060, n\u00E3o altera nada.\n- Se nenhuma existe, marca esta como can\u00F4nica.\n- O campo \u0060Aplicacaoid\u0060 da area \u00E9 a chave de tenant \u2014 nunca comparar entre aplica\u00E7\u00F5es diferentes.\n- Usar \u0060.AnyAsync()\u0060 \u002B \u0060.AsNoTracking()\u0060 n\u00E3o se aplica aqui pois \u0060area\u0060 j\u00E1 est\u00E1 em tracking. A query adicional deve ser \u0060AsNoTracking\u0060.\n\n**Observa\u00E7\u00F5es:**\n- N\u00E3o criar endpoint para alterar a \u00E1rea can\u00F4nica manualmente por ora \u2014 s\u00F3 via publica\u00E7\u00E3o autom\u00E1tica.\n- N\u00E3o usar \u0060DateTime.Now\u0060 \u2014 se precisar de timestamp, usar \u0060DateTime.UtcNow\u0060.\n- Depende de \u0060vitrine-canonico-1-migration\u0060 (campo \u0060CanonicalArea\u0060 precisa existir no modelo).",
+  "url_externa": null,
+  "status": "done",
+  "impeditivo": false,
+  "resultado": "\u0060PublicarAreaAsync\u0060 atualizado. A l\u00F3gica adicional verifica com \u0060AnyAsync\u0060 \u002B \u0060AsNoTracking\u0060 (query sem tracking, pois \u0060area\u0060 j\u00E1 est\u00E1 em tracking) e s\u00F3 seta \u0060CanonicalArea = true\u0060 quando nenhuma outra \u00E1rea da mesma aplica\u00E7\u00E3o j\u00E1 possui a flag. O \u0060SaveChangesAsync\u0060 persiste tudo em uma \u00FAnica transa\u00E7\u00E3o.\n",
+  "prompt_agente": null,
+  "diretorio_alvo": "T:\\Developer\\RepositorioTrabalho\\tecbakana\\cmsx\\CMSXRepo",
+  "timestamp": "2026-05-17T00:00:00Z",
+  "pendencias": null,
+  "dependencias": [
+    "vitrine-canonico-1-migration",
+    "vitrine-canonico-2-contratos"
+  ],
+  "bloqueado": false,
+  "resposta_usuario": null,
+  "comentarios_teste": null,
+  "timestamp_atualizacao": "2026-05-17T20:56:26.7544105Z",
+  "resultado_revisao": "\u0060\u0060\u0060json\n{\n  \u0022aprovado\u0022: true,\n  \u0022resumo\u0022: \u0022PublicarAreaAsync implementado conforme spec: verifica\u00E7\u00E3o de canonical com AnyAsync\u002BAsNoTracking, escopo por Aplicacaoid, guard contra sobrescrever canonical existente, SaveChangesAsync \u00FAnico ao final.\u0022,\n  \u0022url_teste\u0022: \u0022/vitrine/area/{areaId}/publicar\u0022,\n  \u0022violacoes\u0022: [],\n  \u0022avisos\u0022: [\n    {\n      \u0022tipo\u0022: \u0022infra_sem_testcontainers\u0022,\n      \u0022mensagem\u0022: \u0022VitrineRepositorio.PublicarAreaAsync alterou l\u00F3gica de escrita em CMSXData (campo CanonicalArea) sem cobertura de teste de integra\u00E7\u00E3o via Testcontainers. Cen\u00E1rios cr\u00EDticos sem valida\u00E7\u00E3o automatizada: (1) \u00E1rea publicada quando nenhuma can\u00F4nica existe \u2192 deve setar CanonicalArea=true; (2) \u00E1rea publicada quando can\u00F4nica j\u00E1 existe \u2192 deve preservar false; (3) AnyAsync com Aplicacaoid de outra tenant \u2192 n\u00E3o deve interferir.\u0022,\n      \u0022arquivos\u0022: [\u0022CMSXRepo/VitrineRepositorio.cs\u0022]\n    },\n    {\n      \u0022tipo\u0022: \u0022triade_parcial_justificada\u0022,\n      \u0022mensagem\u0022: \u0022Task \u00E9 exclusivamente de l\u00F3gica de reposit\u00F3rio (CanonicalArea autom\u00E1tico via publica\u00E7\u00E3o). Nenhum endpoint novo foi exigido pela spec \u2014 o endpoint /vitrine/area/{areaId}/publicar j\u00E1 existia. UI n\u00E3o requer altera\u00E7\u00E3o pois o fluxo de publica\u00E7\u00E3o j\u00E1 estava exposto. Tr\u00EDade incompleta justificada.\u0022,\n      \u0022arquivos\u0022: []\n    }\n  ]\n}\n\u0060\u0060\u0060\n",
+  "url_teste": "/vitrine/area/{areaId}/publicar",
+  "consideracoes_refazer": null,
+  "contratos": {
+    "schema": {
+      "afetada": false,
+      "escopo": "",
+      "artefatos": [],
+      "expoe": ""
+    },
+    "repositorio": {
+      "afetada": true,
+      "escopo": "Atualizar PublicarAreaAsync em VitrineRepositorio para, ap\u00F3s setar VitrineHtmlSnapshot e VitrinePublicado, verificar via AnyAsync (AsNoTracking) se alguma outra \u00E1rea da mesma Aplicacaoid j\u00E1 possui CanonicalArea = true; se n\u00E3o houver, marcar a \u00E1rea atual como can\u00F4nica antes de SaveChangesAsync.",
+      "artefatos": [
+        "CMSXRepo/VitrineRepositorio.cs"
+      ],
+      "expoe": "Task\u003Cbool\u003E PublicarAreaAsync(string areaId, string htmlSnapshot) \u2014 contrato inalterado; comportamento interno estendido com auto-promo\u00E7\u00E3o de CanonicalArea"
+    },
+    "api": {
+      "afetada": false,
+      "escopo": "",
+      "artefatos": [],
+      "expoe": ""
+    },
+    "frontend": {
+      "afetada": false,
+      "escopo": "",
+      "artefatos": [],
+      "expoe": ""
+    }
+  }
+}

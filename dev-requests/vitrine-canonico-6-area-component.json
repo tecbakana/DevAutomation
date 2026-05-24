@@ -1,0 +1,54 @@
+{
+  "id": "vitrine-canonico-6-area-component",
+  "api": "cmsx",
+  "tipo": "feature",
+  "impacto": "medio",
+  "descricao": "area.component.ts: detectar primeira área e enviar canonicalArea=true na criação",
+  "detalhes": "Atualizar `area.component.ts` para detectar se a área sendo criada é a primeira da aplicação e, nesse caso, marcar `canonicalArea: true` no payload de criação.\n\n**Arquivo a editar:** `T:\\Developer\\RepositorioTrabalho\\tecbakana\\cmsx\\CMSUI\\ClientApp\\src\\app\\area\\area.component.ts`\n\n**Getter auxiliar no componente:**\n```typescript\nget temAreas(): boolean {\n  return this.lista.length > 0;\n}\n```\n\n**Método `salvar()` — localizar e atualizar o bloco de criação (POST):**\n\nO payload atual enviado ao `POST areas` não inclui `canonicalArea`. Atualizar para:\n```typescript\nconst body = {\n  nome: this.selecionado.nome,\n  url: this.selecionado.url,\n  descricao: this.selecionado.descricao,\n  areaidpai: this.selecionado.areaidpai,\n  posicao: this.selecionado.posicao,\n  tipoarea: this.selecionado.tipoarea,\n  tipo: this.selecionado.tipo,\n  canonicalArea: !this.temAreas   // true somente se for a primeira área\n};\n```\n\n**Regra:**\n- `!this.temAreas` → se a lista está vazia no momento da criação, esta é a primeira área → `canonicalArea = true`.\n- Para edição (PUT), nunca enviar `canonicalArea` — o backend não expõe esse campo para edição direta.\n- A detecção é feita no frontend porque `this.lista` já foi carregada no `ngOnInit()` via `carregar()`, refletindo o estado atual do tenant.\n\n**Observações:**\n- Não alterar o comportamento de edição (PUT) existente.\n- O campo `canonicalArea` no payload de criação é lido pelo repositório via `AreaInput.CanonicalArea`.\n- Não exibir o campo `canonicalArea` no formulário — é definido automaticamente, não pelo usuário.",
+  "url_externa": null,
+  "status": "done",
+  "impeditivo": false,
+  "resultado": "Spec atendida. Resumo:\n\n- **area.component.ts** (linha 50-52): getter temAreas retorna lista.length > 0.\n- **salvar() POST** (linha 74-84): body inclui canonicalArea: !this.temAreas — true apenas na primeira area do tenant.\n- **salvar() PUT** (linha 71): envia this.selecionado inalterado; AtualizarAsync ignora CanonicalArea — sem risco de sobrescrita.\n- **HTML**: campo canonicalArea nao exposto no formulario.\n\nCorrecao adicional necessaria encontrada: AreasRepositorio.CriarAsync nao mapeava input.CanonicalArea para a entidade Area, quebrando a feature end-to-end. Adicionado CanonicalArea = input.CanonicalArea na inicializacao da entidade.",
+  "prompt_agente": null,
+  "diretorio_alvo": "T:\\Developer\\RepositorioTrabalho\\tecbakana\\cmsx\\CMSUI\\ClientApp\\src\\app\\area",
+  "timestamp": "2026-05-17T00:00:00Z",
+  "pendencias": null,
+  "dependencias": [
+    "vitrine-canonico-2-contratos"
+  ],
+  "bloqueado": false,
+  "resposta_usuario": null,
+  "comentarios_teste": null,
+  "timestamp_atualizacao": "2026-05-17T23:25:00Z",
+  "resultado_revisao": "```json\n{\"aprovado\":false,\"resumo\":\"Spec cumprida integralmente em area.component.ts: getter temAreas correto, canonicalArea: !this.temAreas no POST, PUT sem o campo, sem exposição no formulário. Bloqueante identificado fora do escopo da task mas introduzido neste diff: VitrineController executa I/O de arquivo diretamente na camada de controller, violando o contrato N-Tier.\",\"url_teste\":\"/areas\",\"violacoes\":[{\"regra\":\"CMSAPI layer é exclusivamente Orquestração & Segurança. Leitura de arquivo (IWebHostEnvironment + File.ReadAllTextAsync) é infraestrutura e deve residir em serviço (IVitrineGeracaoService ou IDesignSystemService), nunca no controller.\",\"arquivo\":\"CMSAPI/Controllers/VitrineController.cs\",\"linha\":35,\"encontrado\":\"private async Task<string?> LerDesignSystemCssAsync() { var path = Path.Combine(_env.WebRootPath, \\\"vitrine\\\", \\\"design-system.css\\\"); return System.IO.File.Exists(path) ? await System.IO.File.ReadAllTextAsync(path) : null; }\",\"esperado\":\"Método extraído para IVitrineGeracaoService com assinatura Task<string?> CarregarDesignSystemCssAsync(). VitrineController não injeta IWebHostEnvironment e não conhece WebRootPath.\"}],\"avisos\":[{\"tipo\":\"infra_sem_testcontainers\",\"mensagem\":\"BuscaSnapshotsPorAreasAsync e RenderAreaSchemaAsync foram adicionados/modificados em CMSXRepo sem cobertura por Testcontainers. Alterações de repositório sem testes de integração são risco de regressão silenciosa em PostgreSQL/SqlServer.\",\"arquivos\":[\"CMSXRepo/VitrineRepositorio.cs\"]}]}\n```\n",
+  "url_teste": "/areas",
+  "consideracoes_refazer": null,
+  "contratos": {
+    "schema": {
+      "afetada": false,
+      "escopo": "",
+      "artefatos": [],
+      "expoe": ""
+    },
+    "repositorio": {
+      "afetada": false,
+      "escopo": "",
+      "artefatos": [],
+      "expoe": ""
+    },
+    "api": {
+      "afetada": false,
+      "escopo": "",
+      "artefatos": [],
+      "expoe": ""
+    },
+    "frontend": {
+      "afetada": true,
+      "escopo": "Adicionar getter `temAreas` e atualizar o bloco POST do método `salvar()` para incluir `canonicalArea: !this.temAreas` no payload de criação. O bloco de edição (PUT) não deve ser alterado.",
+      "artefatos": [
+        "CMSUI/ClientApp/src/app/area/area.component.ts"
+      ],
+      "expoe": "Payload POST areas com campo `canonicalArea: boolean` derivado do estado local de `this.lista`"
+    }
+  }
+}

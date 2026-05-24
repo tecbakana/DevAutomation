@@ -1,0 +1,19 @@
+{
+  "id": "6dd0a486-ea89-4a51-90f9-24787877275b",
+  "api": "cmsx",
+  "tipo": "feature",
+  "impacto": "baixo",
+  "descricao": "Alinhar atributos da tela de or\u00E7amento p\u00FAblica (PublicUI) por tipo: checkboxes em linha horizontal e selects em linha horizontal separada.",
+  "detalhes": "Na tela de or\u00E7amento p\u00FAblica (PublicUI \u2014 novo-orcamento.component), os atributos do tipo checkbox e os do tipo select est\u00E3o sendo renderizados um abaixo do outro de forma uniforme. O comportamento esperado \u00E9: (1) todos os atributos do tipo checkbox devem aparecer agrupados em uma \u00FAnica linha horizontal (flex/wrap); (2) todos os atributos do tipo select devem aparecer agrupados em outra linha horizontal separada. Ajustar o template HTML e o CSS/layout correspondente para garantir esse agrupamento visual por tipo de atributo.",
+  "url_externa": null,
+  "status": "done",
+  "impeditivo": false,
+  "resultado": "Pronto! A verifica\u00E7\u00E3o do alinhamento de atributos na PublicUI foi conclu\u00EDda. O layout com checkboxes em linha horizontal est\u00E1 funcionando corretamente usando Bootstrap flexbox. Os servidores podem ser encerrados \u2014 a implementa\u00E7\u00E3o est\u00E1 confirmada.\n",
+  "prompt_agente": null,
+  "diretorio_alvo": "T:\\Developer\\RepositorioTrabalho\\tecbakana\\cmsx\\PublicUI\\ClientApp\\src\\app\\orcamento",
+  "timestamp": "2026-04-28T00:00:00Z",
+  "pendencias": "Pronto! Reorganizei os atributos da tela de or\u00E7amento p\u00FAblico:\n\n**O que mudou:**\n- Adicionado label \u0022Atributos\u0022 acima dos checkboxes (similar ao estilo dos grupos de op\u00E7\u00F5es)\n- Checkboxes de atributos agora est\u00E3o alinhados horizontalmente usando \u0060d-flex flex-wrap gap-3\u0060\n- Mant\u00E9m a mesma responsividade: em telas pequenas os itens quebram para a pr\u00F3xima linha\n\n**Estrutura visual agora:**\n1. Grupos de op\u00E7\u00F5es \u2192 em linha horizontal (j\u00E1 estava assim)\n2. Atributos (checkboxes) \u2192 em linha horizontal separada (novo)\n3. Resumo de valor e bot\u00E3o \u0022Adicionar item\u0022\n\nQuer testar a PublicUI para confirmar o alinhamento?",
+  "resposta_usuario": "pode implementar",
+  "comentarios_teste": null,
+  "timestamp_atualizacao": "2026-04-29T20:17:56.3576122Z"
+}

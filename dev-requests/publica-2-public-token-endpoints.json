@@ -1,0 +1,19 @@
+{
+  "id": "publica-2-public-token-endpoints",
+  "api": "cmsx",
+  "tipo": "feature",
+  "impacto": "alto",
+  "descricao": "Endpoints admin e p\u00FAblico para PublicToken \u2014 gerar, revogar e resolver",
+  "detalhes": "Implementar endpoints de gerenciamento de token no CMSAPI. Depende de publica-1-public-token-model estar conclu\u00EDdo.\n\n**Pr\u00E9-requisito:** entidade PublicToken e DbSet j\u00E1 existem em CMSXData.\n\n---\n\n## Endpoints ADMIN (requer [Authorize])\n\nAdicionar em \u0060T:\\Developer\\RepositorioTrabalho\\tecbakana\\cmsx\\CMSAPI\\Controllers\\AplicacaosController.cs\u0060:\n\n**GET /api/aplicacaos/{id}/token**\n- Busca o PublicToken ativo para o aplicacaoid informado\n- Retorna: \u0060{ token, dataInclusao }\u0060 ou 404 se n\u00E3o houver\n- Respeitar controle de acesso por aplicacaoid (mesmo padr\u00E3o dos outros endpoints do controller)\n\n**POST /api/aplicacaos/{id}/token**\n- Revoga token ativo anterior (seta Ativo=false, DataRevogacao=UtcNow) se existir\n- Gera novo token: \u0060Convert.ToBase64String(RandomNumberGenerator.GetBytes(32)).Replace(\u0022\u002B\u0022,\u0022-\u0022).Replace(\u0022/\u0022,\u0022_\u0022).Replace(\u0022=\u0022,\u0022\u0022)[..43]\u0060 \u2014 43 chars URL-safe\n- Persiste novo PublicToken com Ativo=true\n- Retorna: \u0060{ token, dataInclusao }\u0060\n\n**DELETE /api/aplicacaos/{id}/token**\n- Revoga token ativo (Ativo=false, DataRevogacao=UtcNow)\n- Retorna 204\n\n---\n\n## Endpoint P\u00DABLICO (AllowAnonymous)\n\nAdicionar em \u0060T:\\Developer\\RepositorioTrabalho\\tecbakana\\cmsx\\CMSAPI\\Controllers\\LojaController.cs\u0060:\n\n**GET /api/loja/resolve** \u2014 ATUALIZAR o existente\n- Hoje aceita \u0060?slug=\u0060. Adicionar suporte a \u0060?token=\u0060 como alternativa\n- Se token informado: buscar PublicToken ativo \u2192 retornar aplicacaoid \u002B nomeLoja\n- Se slug informado: comportamento atual (busca por Aplicacao.Url)\n- Se nenhum ou token inv\u00E1lido/inativo: 400 ou 404 conforme o caso\n\n**Observa\u00E7\u00F5es:**\n- Usar CmsxDbContext diretamente (padr\u00E3o atual do LojaController)\n- N\u00E3o expor o aplicacaoid no erro quando token for inv\u00E1lido\n- Token de 43 chars \u00E9 URL-safe, n\u00E3o precisa encoding",
+  "url_externa": null,
+  "status": "done",
+  "impeditivo": false,
+  "resultado": "Pronto. Resumo do que foi criado:\n\n**\u0060CMSAPI/Controllers/PublicTokensController.cs\u0060**\n\n| Endpoint | Auth | Descri\u00E7\u00E3o |\n|---|---|---|\n| \u0060GET /PublicTokens\u0060 | Authorize | Lista tokens do tenant; admin pode filtrar por \u0060?aplicacaoid=\u0060 |\n| \u0060POST /PublicTokens\u0060 | Authorize | Gera novo token aleat\u00F3rio (48 bytes, base64url); aceita \u0060Datavencimento\u0060 opcional; admin pode informar \u0060Aplicacaoid\u0060 |\n| \u0060DELETE /PublicTokens/{id}\u0060 | Authorize | Revoga token (Ativo = false) |\n| \u0060GET /PublicTokens/resolve/{token}\u0060 | AllowAnonymous | Retorna \u0060{ aplicacaoid }\u0060 ou 404; valida \u0060Ativo\u0060 e \u0060Datavencimento\u0060 |\n\nO script SQL (\u0060sql/migration_public_token.sql\u0060) j\u00E1 existia. A tabela \u0060publictoken\u0060 j\u00E1 est\u00E1 mapeada no \u0060CmsxDbContext\u0060. O controller segue o mesmo padr\u00E3o dos controllers recentes (DbContext direto, \u0060UserContext()\u0060 helper).\n",
+  "prompt_agente": null,
+  "diretorio_alvo": "T:\\Developer\\RepositorioTrabalho\\tecbakana\\cmsx",
+  "timestamp": "2026-04-25T00:00:00Z",
+  "pendencias": null,
+  "resposta_usuario": null,
+  "comentarios_teste": null,
+  "timestamp_atualizacao": "2026-04-25T20:13:52.7533663Z"
+}
