@@ -4,6 +4,8 @@ using System.Text;
 using System.Text.Json;
 using DevAutomation.Hubs;
 using DevAutomation.Models;
+using DevAutomation.Services.Orchestration;
+using DevAutomation.Services.Store;
 using Microsoft.AspNetCore.SignalR;
 
 namespace DevAutomation.Services;
@@ -13,18 +15,18 @@ public class OrchestratorService : BackgroundService
     // ActivitySource para monitoramento do ciclo de vida macro e micro das tarefas
     private static readonly ActivitySource ForgeSource = new("Forge.SoftwareFactory.Core");
 
-    private readonly string _claudePath;
+    private readonly IOrchestrationStrategy _strategy;
+    private readonly IDevRequestStore _store;
     private readonly string _globalClaudeMdPath;
+    private readonly string _rootPath;
     private readonly IHubContext<OrchestratorHub> _hub;
     private readonly ILogger<OrchestratorService> _logger;
     private FileSystemWatcher? _watcher;
 
     private readonly RagService _rag;
     private readonly RagIndexerService _indexer;
-    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, Process> _runningProcesses = new();
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, CancellationTokenSource> _runningCts = new();
     private readonly ForgeAuditorService _auditorService;
-
-    private static readonly JsonSerializerOptions _jsonOpts = new() { WriteIndented = true };
 
     private static readonly string _homeDir = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
     private static readonly Dictionary<string, string> _memoryDirMap = new(StringComparer.OrdinalIgnoreCase)
@@ -38,83 +40,84 @@ public class OrchestratorService : BackgroundService
 
     public OrchestratorService(
         IConfiguration config,
+        IOrchestrationStrategy strategy,
+        IDevRequestStore store,
         IHubContext<OrchestratorHub> hub,
         ILogger<OrchestratorService> logger,
         RagService rag,
         RagIndexerService indexer,
         ForgeAuditorService auditorService)
     {
-        DevRequestsDir      = config["DevAutomation:DevRequestsDir"]!;
-        _claudePath         = config["DevAutomation:ClaudePath"] ?? "claude";
+        _strategy           = strategy;
+        _store              = store;
+        _rootPath           = config["DevAutomation:RootPath"] ?? AppContext.BaseDirectory;
         _globalClaudeMdPath = config["DevAutomation:GlobalClaudeMdPath"]
             ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".claude", "CLAUDE.md");
-        _hub     = hub;
-        _logger  = logger;
-        _rag     = rag;
-        _indexer = indexer;
+        _hub            = hub;
+        _logger         = logger;
+        _rag            = rag;
+        _indexer        = indexer;
         _auditorService = auditorService;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        Directory.CreateDirectory(DevRequestsDir);
-
-        _watcher = new FileSystemWatcher(DevRequestsDir, "*.json")
+        if (_store.WatchDirectory is { } watchDir)
         {
-            NotifyFilter = NotifyFilters.FileName | NotifyFilters.LastWrite,
-            EnableRaisingEvents = true
-        };
+            Directory.CreateDirectory(watchDir);
+            _watcher = new FileSystemWatcher(watchDir, "*.json")
+            {
+                NotifyFilter        = NotifyFilters.FileName | NotifyFilters.LastWrite,
+                EnableRaisingEvents = true
+            };
+            _watcher.Created += OnFileChanged;
+            _watcher.Changed += OnFileChanged;
+            _logger.LogInformation("Orquestrador monitorando: {Dir}", watchDir);
+        }
+        else
+        {
+            _logger.LogInformation("Orquestrador sem FileSystemWatcher (store: {Type}).", _store.GetType().Name);
+        }
 
-        _watcher.Created += OnFileChanged;
-        _watcher.Changed += OnFileChanged;
-
-        _logger.LogInformation("Orquestrador monitorando: {Dir}", DevRequestsDir);
-
-        // Processa qualquer pendente que já exista ao iniciar
         await ProcessPendingAsync();
-
         await Task.Delay(Timeout.Infinite, stoppingToken);
     }
 
     private void OnFileChanged(object sender, FileSystemEventArgs e)
     {
-        Task.Run(() => ProcessFileAsync(e.FullPath));
+        var id = Path.GetFileNameWithoutExtension(e.FullPath);
+        Task.Run(() => ProcessByIdAsync(id));
     }
 
     private async Task ProcessPendingAsync()
     {
-        foreach (var file in Directory.GetFiles(DevRequestsDir, "*.json"))
-            await ProcessFileAsync(file);
+        var all = await _store.ListAllAsync();
+        foreach (var request in all.Where(r => r.Status == "pending"))
+            await ProcessRequestAsync(request);
     }
 
-    private async Task ProcessFileAsync(string filePath)
+    private async Task ProcessByIdAsync(string id)
     {
-        await Task.Delay(200); // aguarda o arquivo estar completamente escrito
+        await Task.Delay(200);
+        var request = await _store.GetByIdAsync(id);
+        if (request is not null)
+            await ProcessRequestAsync(request);
+    }
 
-        DevRequest? request;
-        try
-        {
-            var json = await File.ReadAllTextAsync(filePath);
-            request  = JsonSerializer.Deserialize<DevRequest>(json);
-        }
-        catch
-        {
-            return;
-        }
-
-        if (request is null || request.Status != "pending") return;
+    private async Task ProcessRequestAsync(DevRequest request)
+    {
+        if (request.Status != "pending") return;
 
         _logger.LogInformation("Nova dev-request: {Id} — {Descricao}", request.Id, request.Descricao);
 
-        // Toda request vai para backlog — aguarda aprovação manual
-        request.Status = "backlog";
+        request.Status               = "backlog";
         request.TimestampAtualizacao = DateTime.UtcNow;
-        await SaveAsync(filePath, request);
+        await SaveAsync(request);
         await NotifyAsync(request);
         _logger.LogInformation("Dev-request {Id} movida para backlog.", request.Id);
     }
 
-    private async Task DispatchAsync(DevRequest request, string filePath)
+    private async Task DispatchAsync(DevRequest request)
     {
         // 1. Inicia o TRACE macro no Langfuse para esta execução
         using Activity? trace = ForgeSource.StartActivity("DispatchAgentPipeline");
@@ -129,10 +132,22 @@ public class OrchestratorService : BackgroundService
 
         request.Status = "in_progress";
         request.TimestampAtualizacao = DateTime.UtcNow;
-        await SaveAsync(filePath, request);
+        await SaveAsync(request);
         await NotifyAsync(request);
 
-        var targetDir = request.DiretorioAlvo ?? "T:\\devautomation";
+        var targetDir = request.DiretorioAlvo ?? _rootPath;
+
+        // Short-circuit se nenhum orquestrador está disponível
+        if (!_strategy.IsAvailable())
+        {
+            _logger.LogWarning("[Orquestrador] Strategy '{Name}' indisponível — dev-request {Id} mantida em pendente.", _strategy.Name, request.Id);
+            request.Status    = "pendente";
+            request.Resultado = "Nenhum orquestrador configurado — implemente manualmente.";
+            request.TimestampAtualizacao = DateTime.UtcNow;
+            await SaveAsync(request);
+            await NotifyAsync(request);
+            return;
+        }
 
         var contratos = await DecomporAsync(request, targetDir);
         if (contratos != null)
@@ -142,7 +157,7 @@ public class OrchestratorService : BackgroundService
             if (camadasAfetadas.Count > 1)
             {
                 _logger.LogInformation("[Orquestrador] {N} camadas para {Id} — modo multi-camada", camadasAfetadas.Count, request.Id);
-                await DispatchMultiCamadaAsync(request, filePath, contratos);
+                await DispatchMultiCamadaAsync(request, contratos);
                 return;
             }
         }
@@ -215,10 +230,11 @@ REGRAS OBRIGATÓRIAS — LEIA ANTES DE QUALQUER AÇÃO:
             _       => "claude-sonnet-4-6"
         };
 
+        using var cts = new CancellationTokenSource();
+        _runningCts[request.Id] = cts;
+
         try
         {
-            var psi = BuildClausePsi($"--dangerously-skip-permissions --print --model \"{agentModel}\"", targetDir);
-
             // 2. Cria o SPAN de Geração da LLM para capturar latência e saídas
             using Activity? generationSpan = ForgeSource.StartActivity("Claude_CLI_Execution");
             if (generationSpan != null)
@@ -227,33 +243,23 @@ REGRAS OBRIGATÓRIAS — LEIA ANTES DE QUALQUER AÇÃO:
                 generationSpan.SetTag("gen_ai.request.model", agentModel);
             }
 
-            using var process = Process.Start(psi)!;
-            _runningProcesses[request.Id] = process;
-
-            var stdinTask  = Task.Run(async () => { await process.StandardInput.WriteAsync(prompt); process.StandardInput.Close(); });
-            var outputTask = process.StandardOutput.ReadToEndAsync();
-            var errorTask  = process.StandardError.ReadToEndAsync();
-            await Task.WhenAll(stdinTask, outputTask, errorTask);
-            var output = await outputTask;
-            var error  = await errorTask;
-            await process.WaitForExitAsync();
-
-            _runningProcesses.TryRemove(request.Id, out _);
+            var result = await _strategy.ExecuteAsync(prompt, targetDir, agentModel, cts.Token);
+            var output = result.Output;
+            var error  = result.Error;
 
             // Registra o desfecho da execução do binário na telemetria
             if (generationSpan != null)
             {
                 generationSpan.SetTag("gen_ai.output", output);
-                if (process.ExitCode != 0)
+                if (result.ExitCode != 0)
                 {
                     generationSpan.SetTag("gen_ai.error", error);
-                    generationSpan.SetStatus(ActivityStatusCode.Error, $"Exit code {process.ExitCode}");
+                    generationSpan.SetStatus(ActivityStatusCode.Error, $"Exit code {result.ExitCode}");
                 }
             }
 
-            // Recarrega o arquivo para verificar se foi cancelado durante a execução
-            var currentJson = await File.ReadAllTextAsync(filePath);
-            var currentReq  = JsonSerializer.Deserialize<DevRequest>(currentJson);
+            // Recarrega para verificar se foi cancelado durante a execução
+            var currentReq = await _store.GetByIdAsync(request.Id);
             if (currentReq?.Status == "cancelado")
             {
                 _logger.LogInformation("Dev-request {Id} foi cancelada durante execução.", request.Id);
@@ -266,18 +272,18 @@ REGRAS OBRIGATÓRIAS — LEIA ANTES DE QUALQUER AÇÃO:
                 request.Pendencias = pendencias;
                 request.Resultado  = null;
             }
-            else if (process.ExitCode == 0 && LooksLikeImpeditivo(output))
+            else if (result.ExitCode == 0 && LooksLikeImpeditivo(output))
             {
                 request.Status     = "impeditivo";
                 request.Pendencias = output.Trim();
                 request.Resultado  = null;
             }
-            else if (process.ExitCode != 0)
+            else if (result.ExitCode != 0)
             {
                 request.Status    = "error";
                 request.Resultado = !string.IsNullOrWhiteSpace(error) ? error
                     : !string.IsNullOrWhiteSpace(output) ? output
-                    : $"Processo encerrou com exit code {process.ExitCode} sem output.";
+                    : $"Processo encerrou com exit code {result.ExitCode} sem output.";
             }
             else
             {
@@ -287,11 +293,10 @@ REGRAS OBRIGATÓRIAS — LEIA ANTES DE QUALQUER AÇÃO:
                 // 3. Portão de Qualidade: Testes de Integração
                 using (Activity? testSpan = ForgeSource.StartActivity("RunIntegrationTests"))
                 {
-                    // ── Testes de integração automáticos ─────────────────────────
                     testSpan?.SetTag("forge.tests.output", testResult.Output);
                     if (!testResult.Passed)
                     {
-                        request.Status = "error";
+                        request.Status    = "error";
                         request.Resultado = $"{output}\n\n--- TESTES DE INTEGRAÇÃO FALHARAM ---\n{testResult.Output}";
                         testSpan?.SetStatus(ActivityStatusCode.Error, "Testes de integração falharam.");
                         trace?.SetStatus(ActivityStatusCode.Error, "Pipeline rejeitado pelos testes automáticos.");
@@ -302,33 +307,39 @@ REGRAS OBRIGATÓRIAS — LEIA ANTES DE QUALQUER AÇÃO:
                 // ── Vulnerabilidades de pacotes ───────────────────────────────
                 var vulnOutput = await CheckVulnerabilitiesAsync(targetDir);
 
-                await ReviewAsync(request, filePath, testResult.Output, vulnOutput);
+                await ReviewAsync(request, testResult.Output, vulnOutput);
                 trace?.SetTag("forge.pipeline.result", "encaminhado_para_revisao");
                 return; // ReviewAsync conclui save/notify
             }
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        catch (OperationCanceledException)
         {
-            _runningProcesses.TryRemove(request.Id, out _);
+            _logger.LogInformation("Dev-request {Id} cancelada via CancellationToken.", request.Id);
+            return;
+        }
+        catch (Exception ex)
+        {
             trace?.SetStatus(ActivityStatusCode.Error, ex.Message);
 
-            // Verifica se foi cancelado
             try
             {
-                var currentJson = await File.ReadAllTextAsync(filePath);
-                var currentReq  = JsonSerializer.Deserialize<DevRequest>(currentJson);
+                var currentReq = await _store.GetByIdAsync(request.Id);
                 if (currentReq?.Status == "cancelado") return;
             }
             catch { }
 
             request.Status    = "error";
             request.Resultado = ex.Message;
-            _logger.LogError(ex, "Erro ao executar Claude para dev-request {Id}", request.Id);
+            _logger.LogError(ex, "Erro ao executar strategy '{Name}' para dev-request {Id}", _strategy.Name, request.Id);
+        }
+        finally
+        {
+            _runningCts.TryRemove(request.Id, out _);
         }
 
         saveAndNotify:
         request.TimestampAtualizacao = DateTime.UtcNow;
-        await SaveAsync(filePath, request);
+        await SaveAsync(request);
         await NotifyAsync(request);
     }
 
@@ -338,18 +349,11 @@ REGRAS OBRIGATÓRIAS — LEIA ANTES DE QUALQUER AÇÃO:
     {
         _logger.LogInformation("[Decomp] Decompondo dev-request {Id} em contratos de camada", request.Id);
         var prompt = BuildDecompositionPrompt(request);
-        var psi    = BuildClausePsi("--dangerously-skip-permissions --print --model \"claude-sonnet-4-6\"", targetDir);
 
         try
         {
-            using var proc = Process.Start(psi)!;
-            var stdinTask  = Task.Run(async () => { await proc.StandardInput.WriteAsync(prompt); proc.StandardInput.Close(); });
-            var outputTask = proc.StandardOutput.ReadToEndAsync();
-            await Task.WhenAll(stdinTask, outputTask);
-            var output = await outputTask;
-            await proc.WaitForExitAsync();
-
-            var contratos = TryParseContratos(output);
+            var result = await _strategy.ExecuteAsync(prompt, targetDir, "claude-sonnet-4-6");
+            var contratos = TryParseContratos(result.Output);
             if (contratos != null)
             {
                 _logger.LogInformation("[Decomp] schema={S} repo={R} api={A} front={F}",
@@ -444,35 +448,21 @@ REGRAS OBRIGATÓRIAS — LEIA ANTES DE QUALQUER AÇÃO:
         var contextoRag = await _rag.BuildContextAsync(queryRag, topK: 5, filtrosProjeto: projeto);
 
         var prompt = BuildLayerPrompt(request, camada, nome, contextoAnterior, contextoRag);
-        var psi    = BuildClausePsi("--dangerously-skip-permissions --print --model \"claude-sonnet-4-6\"", targetDir);
 
-        var chaveProcesso = $"{request.Id}_{nome}";
         try
         {
-            using var proc = Process.Start(psi)!;
-            _runningProcesses[chaveProcesso] = proc;
+            var result = await _strategy.ExecuteAsync(prompt, targetDir, "claude-sonnet-4-6");
 
-            var stdinTask  = Task.Run(async () => { await proc.StandardInput.WriteAsync(prompt); proc.StandardInput.Close(); });
-            var outputTask = proc.StandardOutput.ReadToEndAsync();
-            var errorTask  = proc.StandardError.ReadToEndAsync();
-            await Task.WhenAll(stdinTask, outputTask, errorTask);
-            var output = await outputTask;
-            var error  = await errorTask;
-            await proc.WaitForExitAsync();
+            if (TryParseImpeditivo(result.Output, out var pendencias))
+                return (false, result.Output, true, pendencias);
 
-            _runningProcesses.TryRemove(chaveProcesso, out _);
+            if (result.ExitCode != 0)
+                return (false, !string.IsNullOrWhiteSpace(result.Error) ? result.Error : result.Output, false, null);
 
-            if (TryParseImpeditivo(output, out var pendencias))
-                return (false, output, true, pendencias);
-
-            if (proc.ExitCode != 0)
-                return (false, !string.IsNullOrWhiteSpace(error) ? error : output, false, null);
-
-            return (true, output, false, null);
+            return (true, result.Output, false, null);
         }
         catch (Exception ex)
         {
-            _runningProcesses.TryRemove(chaveProcesso, out _);
             return (false, ex.Message, false, null);
         }
     }
@@ -523,7 +513,7 @@ REGRAS OBRIGATÓRIAS — LEIA ANTES DE QUALQUER AÇÃO:
         return sb.ToString();
     }
 
-    private async Task DispatchMultiCamadaAsync(DevRequest request, string filePath, ContratosCamada contratos)
+    private async Task DispatchMultiCamadaAsync(DevRequest request, ContratosCamada contratos)
     {
         // Abre o Trace macro da execução multi-camada
         using Activity? multiTrace = ForgeSource.StartActivity("MultiLayerPipeline");
@@ -539,7 +529,7 @@ REGRAS OBRIGATÓRIAS — LEIA ANTES DE QUALQUER AÇÃO:
             // Verifica cancelamento entre camadas
             try
             {
-                var snap = JsonSerializer.Deserialize<DevRequest>(await File.ReadAllTextAsync(filePath));
+                var snap = await _store.GetByIdAsync(request.Id);
                 if (snap?.Status == "cancelado")
                 {
                     _logger.LogInformation("[Orquestrador] Dev-request {Id} cancelada entre camadas.", request.Id);
@@ -567,7 +557,7 @@ REGRAS OBRIGATÓRIAS — LEIA ANTES DE QUALQUER AÇÃO:
                 request.Status     = "impeditivo";
                 request.Pendencias = $"[{nome.ToUpperInvariant()}] {pendencias}";
                 request.TimestampAtualizacao = DateTime.UtcNow;
-                await SaveAsync(filePath, request);
+                await SaveAsync(request);
                 await NotifyAsync(request);
 
                 layerSpan?.SetStatus(ActivityStatusCode.Error, "Execução interrompida por impeditivo.");
@@ -581,7 +571,7 @@ REGRAS OBRIGATÓRIAS — LEIA ANTES DE QUALQUER AÇÃO:
                 request.Status    = "error";
                 request.Resultado = $"[{nome.ToUpperInvariant()}] {output}";
                 request.TimestampAtualizacao = DateTime.UtcNow;
-                await SaveAsync(filePath, request);
+                await SaveAsync(request);
                 await NotifyAsync(request);
 
                 layerSpan?.SetStatus(ActivityStatusCode.Error, $"Falha de execução na camada: {output}");
@@ -605,7 +595,7 @@ REGRAS OBRIGATÓRIAS — LEIA ANTES DE QUALQUER AÇÃO:
                 request.Status = "error";
                 request.Resultado += $"\n\n--- TESTES DE INTEGRAÇÃO FALHARAM ---\n{testResult.Output}";
                 request.TimestampAtualizacao = DateTime.UtcNow;
-                await SaveAsync(filePath, request);
+                await SaveAsync(request);
                 await NotifyAsync(request);
 
                 testSpan?.SetStatus(ActivityStatusCode.Error, "Testes automáticos falharam pós-integração das camadas.");
@@ -615,10 +605,10 @@ REGRAS OBRIGATÓRIAS — LEIA ANTES DE QUALQUER AÇÃO:
             }
         }
         var vulnOutput = await CheckVulnerabilitiesAsync(request.DiretorioAlvo ?? ".");
-        await ReviewAsync(request, filePath, testResult.Output, vulnOutput);
+        await ReviewAsync(request, testResult.Output, vulnOutput);
     }
 
-    private async Task ReviewAsync(DevRequest request, string filePath, string? testOutput = null, string? vulnOutput = null)
+    private async Task ReviewAsync(DevRequest request, string? testOutput = null, string? vulnOutput = null)
     {
         _logger.LogInformation("[Review] Iniciando revisão automática para {Id}", request.Id);
 
@@ -635,25 +625,18 @@ REGRAS OBRIGATÓRIAS — LEIA ANTES DE QUALQUER AÇÃO:
 
         var prompt = BuildReviewPrompt(globalRules, projectRules, gitDiff, request, testOutput, vulnOutput);
 
-        var psi = BuildClausePsi("--dangerously-skip-permissions --print --model \"claude-sonnet-4-6\"", request.DiretorioAlvo ?? ".");
-
         string reviewOutput;
         try
         {
-            using var proc = Process.Start(psi)!;
-            var reviewStdinTask  = Task.Run(async () => { await proc.StandardInput.WriteAsync(prompt); proc.StandardInput.Close(); });
-            var reviewOutputTask = proc.StandardOutput.ReadToEndAsync();
-            var reviewErrorTask  = proc.StandardError.ReadToEndAsync();
-            await Task.WhenAll(reviewStdinTask, reviewOutputTask, reviewErrorTask);
-            reviewOutput = await reviewOutputTask;
-            await proc.WaitForExitAsync();
+            var result = await _strategy.ExecuteAsync(prompt, request.DiretorioAlvo ?? ".", "claude-sonnet-4-6");
+            reviewOutput = result.Output;
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "[Review] Falha ao executar revisor para {Id} — promovendo para em_testes", request.Id);
             request.Status = "em_testes";
             request.TimestampAtualizacao = DateTime.UtcNow;
-            await SaveAsync(filePath, request);
+            await SaveAsync(request);
             await NotifyAsync(request);
             return;
         }
@@ -675,7 +658,7 @@ REGRAS OBRIGATÓRIAS — LEIA ANTES DE QUALQUER AÇÃO:
         }
 
         request.TimestampAtualizacao = DateTime.UtcNow;
-        await SaveAsync(filePath, request);
+        await SaveAsync(request);
         await NotifyAsync(request);
     }
 
@@ -853,11 +836,7 @@ REGRAS OBRIGATÓRIAS — LEIA ANTES DE QUALQUER AÇÃO:
         return false;
     }
 
-    private static async Task SaveAsync(string filePath, DevRequest request)
-    {
-        var json = JsonSerializer.Serialize(request, _jsonOpts);
-        await File.WriteAllTextAsync(filePath, json);
-    }
+    private Task SaveAsync(DevRequest request) => _store.SaveAsync(request);
 
     private async Task NotifyAsync(DevRequest request)
     {
@@ -866,82 +845,91 @@ REGRAS OBRIGATÓRIAS — LEIA ANTES DE QUALQUER AÇÃO:
 
     public async Task<bool> ProcessActionAsync(string id, string action)
     {
-        var file = Directory.GetFiles(DevRequestsDir, "*.json")
-            .FirstOrDefault(f => Path.GetFileNameWithoutExtension(f) == id);
-
-        if (file is null) return false;
-
-        DevRequest? request;
-        try { request = JsonSerializer.Deserialize<DevRequest>(await File.ReadAllTextAsync(file)); }
-        catch { return false; }
-
+        var request = await _store.GetByIdAsync(id);
         if (request is null) return false;
 
         switch (action)
         {
             case "implementar":
-                await DispatchAsync(request, file);
+                await DispatchAsync(request);
                 break;
             case "aprovar":
-                request.Status = "aguardando";
-                request.TimestampAtualizacao = DateTime.UtcNow;
-                await SaveAsync(file, request);
-                await NotifyAsync(request);
-                await DispatchAsync(request, file);
+                if (request.ImplementadoPeloUsuario)
+                {
+                    request.Status = "em_testes";
+                    request.TimestampAtualizacao = DateTime.UtcNow;
+                    await SaveAsync(request);
+                    await NotifyAsync(request);
+                }
+                else
+                {
+                    request.Status = "aguardando";
+                    request.TimestampAtualizacao = DateTime.UtcNow;
+                    await SaveAsync(request);
+                    await NotifyAsync(request);
+                    await DispatchAsync(request);
+                }
                 break;
             case "completar":
                 request.Status = "done";
                 request.TimestampAtualizacao = DateTime.UtcNow;
-                await SaveAsync(file, request);
+                await SaveAsync(request);
                 await NotifyAsync(request);
                 _ = Task.Run(() => PostDoneAsync(request));
                 break;
             case "cancelar":
                 request.Status = "cancelado";
                 request.TimestampAtualizacao = DateTime.UtcNow;
-                await SaveAsync(file, request);
+                await SaveAsync(request);
                 await NotifyAsync(request);
-                if (_runningProcesses.TryRemove(request.Id, out var runningProcess))
+                if (_runningCts.TryRemove(request.Id, out var runningCts))
                 {
                     try
                     {
-                        if (!runningProcess.HasExited)
-                        {
-                            runningProcess.Kill(entireProcessTree: true);
-                            _logger.LogInformation("Processo Claude encerrado para dev-request {Id}", request.Id);
-                        }
+                        runningCts.Cancel();
+                        _logger.LogInformation("CancellationToken cancelado para dev-request {Id}", request.Id);
                     }
                     catch (Exception ex)
                     {
-                        _logger.LogWarning(ex, "Não foi possível encerrar o processo da dev-request {Id}", request.Id);
+                        _logger.LogWarning(ex, "Não foi possível cancelar a dev-request {Id}", request.Id);
                     }
                 }
                 break;
             case "retomar":
-                await DispatchAsync(request, file);
+                await DispatchAsync(request);
                 break;
             case "aprovar_testes":
                 request.Status = "done";
                 request.TimestampAtualizacao = DateTime.UtcNow;
-                await SaveAsync(file, request);
+                await SaveAsync(request);
                 await NotifyAsync(request);
                 _ = Task.Run(() => PostDoneAsync(request));
                 break;
             case "aceitar_aviso":
                 request.Status = "em_testes";
                 request.TimestampAtualizacao = DateTime.UtcNow;
-                await SaveAsync(file, request);
+                await SaveAsync(request);
                 await NotifyAsync(request);
                 break;
             case "refazer":
-                request.Status = "in_progress";
-                request.TimestampAtualizacao = DateTime.UtcNow;
-                await SaveAsync(file, request);
-                await NotifyAsync(request);
-                await DispatchAsync(request, file);
+                if (request.ImplementadoPeloUsuario)
+                {
+                    request.Status = "pendente";
+                    request.TimestampAtualizacao = DateTime.UtcNow;
+                    await SaveAsync(request);
+                    await NotifyAsync(request);
+                }
+                else
+                {
+                    request.Status = "in_progress";
+                    request.TimestampAtualizacao = DateTime.UtcNow;
+                    await SaveAsync(request);
+                    await NotifyAsync(request);
+                    await DispatchAsync(request);
+                }
                 break;
             case "ignorar":
-                File.Delete(file);
+                await _store.DeleteAsync(request.Id);
                 break;
         }
 
@@ -979,19 +967,6 @@ REGRAS OBRIGATÓRIAS — LEIA ANTES DE QUALQUER AÇÃO:
         catch { }
         return false;
     }
-
-    private ProcessStartInfo BuildClausePsi(string claudeArgs, string workingDir) =>
-        new ProcessStartInfo
-        {
-            FileName               = _claudePath,
-            Arguments              = claudeArgs,
-            WorkingDirectory       = workingDir,
-            RedirectStandardInput  = true,
-            RedirectStandardOutput = true,
-            RedirectStandardError  = true,
-            UseShellExecute        = false,
-            CreateNoWindow         = true
-        };
 
     private async Task<(bool Passed, string Output)> RunIntegrationTestsAsync(string workingDir)
     {
@@ -1118,18 +1093,10 @@ REGRAS OBRIGATÓRIAS — LEIA ANTES DE QUALQUER AÇÃO:
 
                 var gitDiff = await GetGitDiffAsync(request.DiretorioAlvo ?? ".");
                 var prompt  = BuildMemoryPrompt(request, gitDiff);
-                var psi     = BuildClausePsi("--dangerously-skip-permissions --print --model \"claude-sonnet-4-6\"",
-                                             request.DiretorioAlvo ?? ".");
 
-                string output;
-                using (var proc = Process.Start(psi)!)
-                {
-                    var stdinTask  = Task.Run(async () => { await proc.StandardInput.WriteAsync(prompt); proc.StandardInput.Close(); });
-                    var outputTask = proc.StandardOutput.ReadToEndAsync();
-                    await Task.WhenAll(stdinTask, outputTask);
-                    output = await outputTask;
-                    await proc.WaitForExitAsync();
-                }
+                var strategyResult = await _strategy.ExecuteAsync(
+                    prompt, request.DiretorioAlvo ?? ".", "claude-sonnet-4-6");
+                var output = strategyResult.Output;
 
                 if (TryParseMemoryOutput(output, out var filename, out var indexEntry, out var content))
                 {
@@ -1244,28 +1211,5 @@ REGRAS OBRIGATÓRIAS — LEIA ANTES DE QUALQUER AÇÃO:
         GC.SuppressFinalize(this);
     }
 
-    public string DevRequestsDir { get; }
-
-    // API pública: lista todas as dev-requests
-    public IEnumerable<DevRequest> ListAll()
-    {
-        if (!Directory.Exists(DevRequestsDir)) return [];
-
-        var all = Directory.GetFiles(DevRequestsDir, "*.json")
-            .Select(f =>
-            {
-                try { return JsonSerializer.Deserialize<DevRequest>(File.ReadAllText(f)); }
-                catch { return null; }
-            })
-            .Where(r => r is not null)
-            .Cast<DevRequest>()
-            .OrderByDescending(r => r.Timestamp)
-            .ToList();
-
-        var doneIds = all.Where(r => r.Status == "done").Select(r => r.Id).ToHashSet();
-        foreach (var r in all)
-            r.Bloqueado = r.Dependencias?.Any(d => !doneIds.Contains(d)) ?? false;
-
-        return all;
-    }
+    public Task<IEnumerable<DevRequest>> ListAllAsync() => _store.ListAllAsync();
 }

@@ -1,0 +1,11 @@
+{
+  "id": "forge-feature-detection",
+  "api": "forge",
+  "tipo": "feature",
+  "impacto": "alto",
+  "descricao": "Implementar feature detection no startup para tornar dependências externas opcionais",
+  "detalhes": "Hoje o Forge não sobe se Qdrant ou Ollama estiverem indisponíveis (health check fatal em Program.cs). Isso bloqueia usuários que só querem o core (kanban, dev-requests, git) sem RAG.\n\nMudanças:\n\n1. Program.cs — tornar health check do Qdrant não-fatal:\n   - Se Qdrant não responder: logar warning, setar flag RagEnabled=false, continuar startup\n   - Se Ollama não responder: idem\n   - Se Claude CLI ausente: setar OrchestratorAvailable=false (preparando para forge-iorchestration-strategy)\n\n2. Criar FeatureFlags singleton registrado no DI:\n   bool RagEnabled\n   bool OrchestratorAvailable\n   bool DevAgentGeminiEnabled\n   bool DevAgentClaudeEnabled\n\n3. GET /api/platform — expandir para incluir features:\n   {\n     'os': 'windows',\n     'features': { ...flags atuais... },\n     'services': { 'qdrant': true, 'ollama': false, 'claudeCli': true }\n   }\n\n4. Panel (index.html) — exibir badge/aviso nas seções RAG e DevAgent quando serviço indisponível, ao invés de erro silencioso\n\n5. RagIndexerService — verificar FeatureFlags.RagEnabled antes de indexar; não lançar exceção se false\n\nCamadas afetadas:\n- Program.cs (health checks)\n- RagIndexerService\n- DevPanelController (/api/platform)\n- panel/index.html (UI badges)\n- Program.cs DI registration\n\nCritérios de aceite:\n- Forge sobe sem Qdrant: painel abre, RAG desabilitado com aviso na UI\n- Forge sobe sem Ollama: idem\n- Forge sobe sem Claude CLI: orquestrador desabilitado, dev-requests ficam em pendente\n- /api/platform retorna estado real de cada serviço\n- Nenhuma exceção não tratada no startup por dependência ausente\n\nDependência: deve ser implementada antes ou junto com forge-iorchestration-strategy",
+  "status": "done",
+  "implementado_pelo_usuario": false,
+  "timestamp": "2026-05-31T00:00:02Z"
+}

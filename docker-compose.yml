@@ -1,0 +1,82 @@
+services:
+
+  forge:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: forge
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      # ── Caminhos internos ao container ────────────────────────────────────────
+      DevAutomation__RootPath: /forge
+      DevAutomation__ConfigFile: /forge/config/environments.json
+      DevAutomation__StateFile: /forge/config/state.json
+      DevAutomation__TemplatesDir: /forge/templates
+      DevAutomation__PanelDir: /forge/panel
+      DevAutomation__ScriptsDir: /forge/scripts
+      DevAutomation__DevRequestsDir: /forge/dev-requests
+      DevAutomation__SwitchScript: /forge/scripts/Switch-Environment.ps1
+
+      # ── Qdrant — usa o container já existente no host ────────────────────────
+      Qdrant__Host: host.docker.internal
+      Qdrant__Port: "6334"
+
+      # ── Ollama (embeddings) — aponta para o host onde o Ollama está rodando ──
+      OllamaSets__Endpoint: http://host.docker.internal:11434
+      OllamaSets__ModelName: bge-m3
+      OllamaSets__NumCtx: "4096"
+      OllamaSets__KeepAlive: "-1"
+
+      # ── Claude Code CLI ───────────────────────────────────────────────────────
+      DevAutomation__ClaudePath: claude
+
+      # ── Store de dev-requests: json (padrão) | sqlite | mongo ────────────────
+      DevAutomation__StoreType: json
+      # DevAutomation__SqliteConnectionString: "Data Source=/forge/dev-requests/devrequests.db"
+      # DevAutomation__MongoConnectionString: "mongodb://mongo:27017"
+
+      # ── Langfuse (opcional — deixe vazio para desabilitar) ───────────────────
+      Langfuse__PublicKey: ""
+      Langfuse__SecretKey: ""
+      Langfuse__BaseUrl: https://cloud.langfuse.com
+
+      # ── RAG sources — projetos a indexar (montar como volumes abaixo) ─────────
+      # Rag__Sources__0__Root: /projects/forge/src
+      # Rag__Sources__0__Projeto: forge
+      # Rag__Sources__0__Exts__0: .cs
+      # Rag__Sources__1__Root: /projects/cmsx
+      # Rag__Sources__1__Projeto: cmsx
+      # Rag__Sources__1__Exts__0: .cs
+      # Rag__Sources__1__Exts__1: .ts
+
+    volumes:
+      # Estado e dev-requests persistidos fora do container
+      - forge-devrequests:/forge/dev-requests
+      - forge-config:/forge/config
+
+      # Monte aqui os repositórios de código que o Forge gerencia:
+      # - /caminho/local/projeto:/projects/projeto:ro
+
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8080/api/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  # ── MongoDB (opcional — ative se StoreType=mongo) ────────────────────────────
+  # mongo:
+  #   image: mongo:8
+  #   container_name: forge-mongo
+  #   restart: unless-stopped
+  #   ports:
+  #     - "27017:27017"
+  #   volumes:
+  #     - forge-mongo-data:/data/db
+
+volumes:
+  forge-devrequests:
+  forge-config:
+  # forge-mongo-data:

@@ -1747,10 +1747,6 @@ select option { background: var(--surface); }
     <div class="nav-item" data-view="rag" onclick="navigate('rag', this)">
       <span class="nav-icon">🔍</span> RAG
     </div>
-    <div class="nav-separator"></div>
-    <div class="nav-item" onclick="alert('fui clicado')">
-      <span class="nav-icon">✓</span> Teste
-    </div>
   </nav>
 
   <div class="sidebar-footer">
@@ -3091,8 +3087,13 @@ function openDevReqModal(id) {
   }
 
   const editBtn = `<button class="btn btn-ghost btn-sm" onclick="openEditDevReqModal('${item.id}')">Editar</button>`;
+  const terminalSt = st === 'done' || st === 'concluido' || st === 'cancelado';
+  const jaTemDone  = st === 'in_progress' || st === 'em_testes';
+  const markDoneBtn = (!terminalSt && !jaTemDone && !item.bloqueado)
+    ? `<button class="btn btn-ghost btn-sm" onclick="devRequestAction('${item.id}','${item.api}','completar');closeDevReqModal()" style="color:var(--green)">Marcar como feito</button>`
+    : '';
   document.getElementById('drd-footer').innerHTML =
-    `<button class="btn btn-ghost btn-sm" onclick="closeDevReqModal()">Fechar</button>${editBtn}${actions}`;
+    `<button class="btn btn-ghost btn-sm" onclick="closeDevReqModal()">Fechar</button>${editBtn}${actions}${markDoneBtn}`;
 
   document.getElementById('modal-devreq-detail').classList.add('show');
 }

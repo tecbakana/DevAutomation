@@ -1,0 +1,18 @@
+{
+  "id": "salematic-mediatr-4-logging-behavior",
+  "api": "salematic",
+  "tipo": "feature",
+  "impacto": "baixo",
+  "descricao": "MediatR — Fase 4: LoggingBehavior (Pipeline Behavior)",
+  "detalhes": "Implementar um Pipeline Behavior de logging que intercepta todos os Commands e Queries, registrando tipo da requisição, tempo de execução e resultado (sucesso/falha).\n\n**Pré-requisito:** Fase 1 concluída (MediatR instalado e registrado no DI).\n\n---\n\n## 1. Criar o Behavior\n\n**`Salematic.Application/Behaviors/LoggingBehavior.cs`**:\n```csharp\nusing MediatR;\nusing Microsoft.Extensions.Logging;\nusing System.Diagnostics;\n\nnamespace Salematic.Application.Behaviors;\n\npublic class LoggingBehavior<TRequest, TResponse>\n    : IPipelineBehavior<TRequest, TResponse>\n    where TRequest : notnull\n{\n    private readonly ILogger<LoggingBehavior<TRequest, TResponse>> _logger;\n\n    public LoggingBehavior(ILogger<LoggingBehavior<TRequest, TResponse>> logger)\n    {\n        _logger = logger;\n    }\n\n    public async Task<TResponse> Handle(\n        TRequest request,\n        RequestHandlerDelegate<TResponse> next,\n        CancellationToken cancellationToken)\n    {\n        var requestName = typeof(TRequest).Name;\n        var sw = Stopwatch.StartNew();\n\n        _logger.LogInformation(\"[MediatR] Iniciando {RequestName}\", requestName);\n\n        try\n        {\n            var response = await next();\n            sw.Stop();\n            _logger.LogInformation(\n                \"[MediatR] {RequestName} concluído em {ElapsedMs}ms\",\n                requestName, sw.ElapsedMilliseconds);\n            return response;\n        }\n        catch (Exception ex)\n        {\n            sw.Stop();\n            _logger.LogError(ex,\n                \"[MediatR] {RequestName} falhou em {ElapsedMs}ms\",\n                requestName, sw.ElapsedMilliseconds);\n            throw;\n        }\n    }\n}\n```\n\n---\n\n## 2. Registrar no DI\n\n**`Salematic.API/Program.cs`** — atualizar o `AddMediatR` existente (adicionado na Fase 1):\n```csharp\nbuilder.Services.AddMediatR(cfg =>\n{\n    cfg.RegisterServicesFromAssembly(typeof(ProcessarCheckoutCommand).Assembly);\n    cfg.AddOpenBehavior(typeof(LoggingBehavior<,>));\n});\n```\n\n---\n\n**Validação esperada:**\n- Ao chamar `POST api/pedidos/webhook`, os logs devem exibir:\n  ```\n  [MediatR] Iniciando ProcessarCheckoutCommand\n  [MediatR] ProcessarCheckoutCommand concluído em Xms\n  ```\n- Em caso de exceção não tratada no handler, o log de erro deve aparecer antes do rethrow",
+  "url_externa": null,
+  "status": "concluido",
+  "impeditivo": false,
+  "resultado": null,
+  "prompt_agente": null,
+  "diretorio_alvo": "T:\\Developer\\salematic",
+  "timestamp": "2026-05-26T10:00:00Z",
+  "pendencias": null,
+  "resposta_usuario": null,
+  "timestamp_atualizacao": "2026-05-26T10:00:00Z"
+}

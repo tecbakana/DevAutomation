@@ -1,0 +1,18 @@
+{
+  "id": "salematic-lock-1-redis-docker",
+  "api": "salematic",
+  "tipo": "infra",
+  "impacto": "medio",
+  "descricao": "Distributed Lock — Task 1: Subir Redis no Docker e configurar connection string",
+  "detalhes": "Subir um container Redis dedicado para o Salematic e configurar a connection string no appsettings.Development.json.\n\n## Comando Docker\n```\ndocker run -d --name salematic-redis -p 6379:6379 redis:7-alpine\n```\n\n## appsettings.Development.json\nAdicionar (ou atualizar) a chave Redis dentro de ConnectionStrings:\n```json\n\"ConnectionStrings\": {\n  \"Redis\": \"localhost:6379\"\n}\n```\n\n## Verificação\n- `docker ps` mostra `salematic-redis` com status Up\n- `docker exec -it salematic-redis redis-cli ping` retorna PONG",
+  "url_externa": null,
+  "status": "pendente",
+  "impeditivo": false,
+  "resultado": null,
+  "prompt_agente": null,
+  "diretorio_alvo": "T:\\Developer\\salematic",
+  "timestamp": "2026-05-28T00:00:00Z",
+  "pendencias": null,
+  "resposta_usuario": null,
+  "timestamp_atualizacao": "2026-05-28T00:00:00Z"
+}

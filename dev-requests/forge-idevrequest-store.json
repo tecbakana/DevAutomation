@@ -1,0 +1,11 @@
+{
+  "id": "forge-idevrequest-store",
+  "api": "forge",
+  "tipo": "refactor",
+  "impacto": "alto",
+  "descricao": "Implementar IDevRequestStore para desacoplar persistência de dev-requests do sistema de arquivos",
+  "detalhes": "Atualmente OrchestratorService e DevPanelController varrem e escrevem JSON diretamente em dev-requests/. Criar abstração IDevRequestStore com três implementações:\n\n1. JsonFileDevRequestStore — comportamento atual, padrão/fallback\n2. MongoDevRequestStore — via MongoDB.Driver, modelo DevRequest serializado direto para BSON\n3. SqliteDevRequestStore — via Dapper + Microsoft.Data.Sqlite, zero infraestrutura adicional\n\nConfiguração via appsettings: DevAutomation:StoreType = 'json' | 'mongo' | 'sqlite'\n\nInterface mínima:\n  Task<IEnumerable<DevRequest>> ListAllAsync()\n  Task<DevRequest?> GetByIdAsync(string id)\n  Task SaveAsync(DevRequest request)\n  Task DeleteAsync(string id)\n\nCamadas afetadas:\n- OrchestratorService: substituir todas as chamadas diretas a File/Directory por IDevRequestStore\n- DevPanelController: idem para GET/PUT/POST de devrequests\n- Program.cs: registrar implementação via DI conforme StoreType\n- docker-compose.yml: adicionar serviço mongo opcional com comentário explicativo\n\nCritérios de aceite:\n- JsonFileDevRequestStore mantém comportamento 100% compatível com o atual\n- MongoDevRequestStore persiste e recupera DevRequest com todos os campos\n- Troca de StoreType via config sem alterar código\n- Forge sobe normalmente com qualquer das três implementações",
+  "status": "done",
+  "implementado_pelo_usuario": false,
+  "timestamp": "2026-05-31T00:00:00Z"
+}

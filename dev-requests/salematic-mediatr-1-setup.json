@@ -1,0 +1,18 @@
+{
+  "id": "salematic-mediatr-1-setup",
+  "api": "salematic",
+  "tipo": "feature",
+  "impacto": "alto",
+  "descricao": "MediatR — Fase 1: Instalação e setup de infraestrutura",
+  "detalhes": "Instalar MediatR no projeto Salematic e configurar o DI. Criar estrutura de pastas para Commands, Notifications e Behaviors.\n\n**Pacotes a instalar (apenas em Salematic.Application):**\n```\ncd T:\\Developer\\salematic\\Salematic.Application\ndotnet add package MediatR --version 12.4.1\n```\n\n**Estrutura de pastas a criar em `Salematic.Application`:**\n```\nSalematic.Application/\n├── Commands/\n│   └── Checkout/\n├── Notifications/\n│   └── Checkout/\n└── Behaviors/\n```\n\n**Registro no DI — em `Salematic.API/Program.cs`, adicionar após os serviços existentes:**\n```csharp\nbuilder.Services.AddMediatR(cfg =>\n    cfg.RegisterServicesFromAssembly(typeof(Salematic.Application.Commands.Checkout.ProcessarCheckoutCommand).Assembly));\n```\n\nNota: o `typeof` será válido após a Fase 2. Na Fase 1 pode usar `typeof(Salematic.Application.DTOs.ChatDtos).Assembly` provisoriamente só para compilar.\n\n**Validação esperada:** `dotnet build` em toda a solution sem erros.",
+  "url_externa": null,
+  "status": "concluido",
+  "impeditivo": false,
+  "resultado": null,
+  "prompt_agente": null,
+  "diretorio_alvo": "T:\\Developer\\salematic",
+  "timestamp": "2026-05-26T10:00:00Z",
+  "pendencias": null,
+  "resposta_usuario": null,
+  "timestamp_atualizacao": "2026-05-26T10:00:00Z"
+}

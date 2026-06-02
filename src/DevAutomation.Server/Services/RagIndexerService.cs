@@ -1,5 +1,6 @@
 using DevAutomation.Models;
 using Microsoft.Extensions.AI;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Options;
 using Microsoft.SemanticKernel.Text;
 using Qdrant.Client;
@@ -14,19 +15,11 @@ public class RagIndexerService : BackgroundService
     private readonly QdrantClient _qdrant;
     private readonly OllamaSettings _ollamaSettings;
     private readonly ILogger<RagIndexerService> _logger;
+    private readonly FeatureFlags _featureFlags;
+    private readonly (string Root, string Projeto, string[] Exts)[] _sources;
 
     private const string Collection = "forge_rag";
     private const ulong  VectorSize = 1024;
-
-    private static readonly (string Root, string Projeto, string[] Exts)[] _sources =
-    [
-        (@"T:\Developer\RepositorioTrabalho\tecbakana\ForgeV2\src",                                                             "forge",           [".cs"]),
-        (@"T:\Developer\RepositorioTrabalho\tecbakana\cmsx",                                                                    "cmsx",            [".cs", ".ts"]),
-        (@"T:\Developer\salematic",                                                                                              "salematic",       [".cs"]),
-        (@"C:\Users\mvoze\.claude\projects\T--Developer-RepositorioTrabalho-tecbakana-cmsx\memory",                            "memory_cmsx",     [".md"]),
-        (@"C:\Users\mvoze\.claude\projects\T--Developer-RepositorioTrabalho-tecbakana-ForgeV2\memory",                         "memory_forge",    [".md"]),
-        (@"C:\Users\mvoze\.claude\projects\T--Developer-salematic\memory",                                                      "memory_salematic",[".md"]),
-    ];
 
     private static readonly string[] _ignoredSegments = ["bin", "obj", "node_modules"];
     private static readonly string[] _ignoredSuffixes  = [".Designer.cs"];
@@ -39,16 +32,42 @@ public class RagIndexerService : BackgroundService
         IEmbeddingGenerator<string, Embedding<float>> embedder,
         QdrantClient qdrant,
         IOptions<OllamaSettings> options,
+        IConfiguration configuration,
+        FeatureFlags featureFlags,
         ILogger<RagIndexerService> logger)
     {
-        _embedder = embedder;
-        _qdrant   = qdrant;
+        _embedder       = embedder;
+        _qdrant         = qdrant;
         _ollamaSettings = options.Value;
-        _logger   = logger;
+        _featureFlags   = featureFlags;
+        _logger         = logger;
+        _sources        = LoadSources(configuration);
+    }
+
+    private static (string Root, string Projeto, string[] Exts)[] LoadSources(IConfiguration cfg)
+    {
+        var list = new List<(string, string, string[])>();
+        var section = cfg.GetSection("Rag:Sources");
+        foreach (var entry in section.GetChildren())
+        {
+            var root    = entry["Root"]    ?? "";
+            var projeto = entry["Projeto"] ?? "";
+            var exts    = entry.GetSection("Exts").GetChildren().Select(e => e.Value ?? "").ToArray();
+            if (!string.IsNullOrEmpty(root) && !string.IsNullOrEmpty(projeto))
+                list.Add((root, projeto, exts));
+        }
+        return [.. list];
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        if (!_featureFlags.RagEnabled)
+        {
+            _logger.LogWarning("RAG desabilitado (Qdrant={Q}, Ollama={O}). RagIndexerService inativo.",
+                _featureFlags.QdrantAvailable, _featureFlags.OllamaAvailable);
+            return;
+        }
+
         await EnsureCollectionAsync(stoppingToken);
         var count = await _qdrant.CountAsync(Collection, cancellationToken: stoppingToken);
         if (count == 0)

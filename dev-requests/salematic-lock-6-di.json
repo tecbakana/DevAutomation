@@ -1,0 +1,18 @@
+{
+  "id": "salematic-lock-6-di",
+  "api": "salematic",
+  "tipo": "feature",
+  "impacto": "medio",
+  "descricao": "Distributed Lock — Task 6: Registrar IConnectionMultiplexer e IStockLockService no DI",
+  "detalhes": "Registrar os serviços de lock no Program.cs.\n\n**Arquivo**: `Salematic.API/Program.cs`\n\n## Adicionar usings\n```csharp\nusing StackExchange.Redis;\nusing Salematic.Infrastructure.Locking;\n```\n\n## Registrar no DI (após o bloco de cache Redis existente)\n```csharp\n// Distributed Lock — Redis\nvar redisConnStr = config.GetConnectionString(\"Redis\")\n    ?? throw new InvalidOperationException(\"ConnectionStrings:Redis não configurado.\");\nbuilder.Services.AddSingleton<IConnectionMultiplexer>(\n    ConnectionMultiplexer.Connect(redisConnStr));\nbuilder.Services.AddSingleton<IStockLockService, RedisStockLockService>();\n```\n\n## Notas\n- `IConnectionMultiplexer` como Singleton — StackExchange.Redis é thread-safe e projetado para reuso\n- Falha no Connect na startup é intencional: Redis é obrigatório nesta configuração\n- A connection string `Redis` já é lida no bloco de cache (linha ~46 do Program.cs atual), pode reutilizar a variável `redisConn` já existente",
+  "url_externa": null,
+  "status": "pendente",
+  "impeditivo": false,
+  "resultado": null,
+  "prompt_agente": null,
+  "diretorio_alvo": "T:\\Developer\\salematic",
+  "timestamp": "2026-05-28T00:00:00Z",
+  "pendencias": null,
+  "resposta_usuario": null,
+  "timestamp_atualizacao": "2026-05-28T00:00:00Z"
+}

@@ -1,0 +1,8 @@
+**/.vs
+**/bin
+**/obj
+**/.git
+**/.claude
+dev-requests/*.json
+*.user
+*.suo

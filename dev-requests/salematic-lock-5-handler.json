@@ -1,0 +1,18 @@
+{
+  "id": "salematic-lock-5-handler",
+  "api": "salematic",
+  "tipo": "feature",
+  "impacto": "alto",
+  "descricao": "Distributed Lock — Task 5: Aplicar lock no ProcessarCheckoutCommandHandler",
+  "detalhes": "Atualizar o handler para adquirir lock por produto antes da sequência check→payment→debit.\n\n**Arquivo**: `Salematic.Application/Commands/Checkout/ProcessarCheckoutCommandHandler.cs`\n\n## Mudanças\n\n### 1. Injetar IStockLockService no construtor\n```csharp\nprivate readonly IStockLockService _stockLock;\n\npublic ProcessarCheckoutCommandHandler(\n    IProdutoRepository produtos,\n    IPedidoRepository pedidos,\n    IClienteRepository clientes,\n    IPagamentoService pagamento,\n    IPublisher publisher,\n    IStockLockService stockLock,\n    ILogger<ProcessarCheckoutCommandHandler> logger)\n{\n    // ...\n    _stockLock = stockLock;\n}\n```\n\n### 2. Adquirir locks antes do loop de verificação\n\nNo início do Handle, após validar o cliente, antes do foreach de verificação de estoque:\n\n```csharp\n// Ordenar por ProdutoId evita deadlock entre requisições concorrentes\nvar produtoIds = command.Itens.Select(i => i.ProdutoId).Distinct().OrderBy(id => id).ToList();\nvar locks = new List<IAsyncDisposable>();\n\ntry\n{\n    foreach (var produtoId in produtoIds)\n    {\n        var lck = await _stockLock.AcquireAsync(produtoId, cancellationToken);\n        if (lck is null)\n        {\n            return Falhou(\"Estoque temporariamente indisponível. Tente novamente em instantes.\");\n        }\n        locks.Add(lck);\n    }\n\n    // ... resto do Handle (verificação, pagamento, debit, pedido, notificação)\n}\nfinally\n{\n    foreach (var lck in locks)\n        await lck.DisposeAsync();\n}\n```\n\n## Notas\n- Locks adquiridos ANTES da verificação de estoque — cobre o intervalo check→payment→debit\n- `finally` garante liberação mesmo em exceção\n- `Falhou(...)` aqui resultará em 400 — se quiser 409 explicitamente, criar uma exception específica e tratar no ExceptionMiddleware",
+  "url_externa": null,
+  "status": "pendente",
+  "impeditivo": false,
+  "resultado": null,
+  "prompt_agente": null,
+  "diretorio_alvo": "T:\\Developer\\salematic",
+  "timestamp": "2026-05-28T00:00:00Z",
+  "pendencias": null,
+  "resposta_usuario": null,
+  "timestamp_atualizacao": "2026-05-28T00:00:00Z"
+}

@@ -74,4 +74,17 @@ public class DevRequest
 
     [JsonPropertyName("contratos")]
     public ContratosCamada? Contratos { get; set; }
+
+    [JsonPropertyName("implementado_pelo_usuario")]
+    public bool ImplementadoPeloUsuario { get; set; } = false;
+
+    [JsonPropertyName("tentativas_fix")]
+    public int TentativasFix { get; set; } = 0;
+
+    [JsonPropertyName("max_tentativas_fix")]
+    public int MaxTentativasFix { get; set; } = 3;
+
+    // JSON array serializado: cada elemento é o ResultadoRevisao de um ciclo reprovado
+    [JsonPropertyName("violacoes_historico")]
+    public string? ViolacoesHistorico { get; set; }
 }

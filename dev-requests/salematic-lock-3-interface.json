@@ -1,0 +1,18 @@
+{
+  "id": "salematic-lock-3-interface",
+  "api": "salematic",
+  "tipo": "feature",
+  "impacto": "alto",
+  "descricao": "Distributed Lock — Task 3: Interface IStockLockService no Domain",
+  "detalhes": "Criar a interface de abstração para o distributed lock no projeto Domain.\n\n**Arquivo novo**: `Salematic.Domain/Interfaces/IStockLockService.cs`\n\n```csharp\nnamespace Salematic.Domain.Interfaces;\n\npublic interface IStockLockService\n{\n    /// <summary>\n    /// Tenta adquirir lock exclusivo sobre o estoque do produto.\n    /// Retorna IAsyncDisposable que libera o lock ao ser descartado.\n    /// Retorna null se não conseguir adquirir após retries.\n    /// </summary>\n    Task<IAsyncDisposable?> AcquireAsync(int produtoId, CancellationToken ct = default);\n}\n```\n\n## Notas\n- Retornar `null` em vez de lançar exceção — permite ao caller decidir a resposta (409 ou retry)\n- `IAsyncDisposable` garante liberação do lock via `await using`",
+  "url_externa": null,
+  "status": "pendente",
+  "impeditivo": false,
+  "resultado": null,
+  "prompt_agente": null,
+  "diretorio_alvo": "T:\\Developer\\salematic",
+  "timestamp": "2026-05-28T00:00:00Z",
+  "pendencias": null,
+  "resposta_usuario": null,
+  "timestamp_atualizacao": "2026-05-28T00:00:00Z"
+}

@@ -1,0 +1,11 @@
+{
+  "id": "forge-iorchestration-strategy",
+  "api": "forge",
+  "tipo": "refactor",
+  "impacto": "alto",
+  "descricao": "Implementar IOrchestrationStrategy para desacoplar execução de dev-requests do Claude CLI",
+  "detalhes": "Atualmente OrchestratorService chama o Claude CLI hardcoded (_claudePath). Extrair a lógica de execução para uma strategy pattern:\n\n1. IOrchestrationStrategy:\n   Task<string> ExecuteAsync(DevRequest request, string workDir, CancellationToken ct)\n   bool IsAvailable()\n   string Name { get; }\n\n2. ClaudeCliStrategy — extrai a lógica atual do OrchestratorService (Process.Start claude)\n3. NoopStrategy — registra a dev-request mas não executa; status permanece 'pendente' com resultado 'Nenhum orquestrador configurado — implemente manualmente'\n4. (Opcional futuro) GeminiStrategy, OpenAiStrategy\n\nConfiguração via appsettings: DevAutomation:OrchestratorStrategy = 'claude' | 'noop'\nFallback automático: se ClaudeCliStrategy.IsAvailable() == false, usa NoopStrategy\n\nCamadas afetadas:\n- OrchestratorService: remover dependência direta do CLI, delegar para IOrchestrationStrategy\n- Program.cs: detectar CLI disponível e registrar a strategy correta via DI\n- appsettings.json: adicionar OrchestratorStrategy\n\nCritérios de aceite:\n- Com Claude CLI instalado: comportamento idêntico ao atual\n- Sem Claude CLI: Forge sobe, dev-request criada, status 'pendente', resultado explica que não há orquestrador\n- Troca de strategy via config sem rebuild\n- NoopStrategy não lança exceção nem quebra o fluxo do kanban\n\nDependência: pode ser desenvolvida em paralelo com forge-idevrequest-store",
+  "status": "done",
+  "implementado_pelo_usuario": false,
+  "timestamp": "2026-05-31T00:00:01Z"
+}

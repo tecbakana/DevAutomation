@@ -1,0 +1,18 @@
+{
+  "id": "salematic-lock-2-cached-repo-fix",
+  "api": "salematic",
+  "tipo": "bugfix",
+  "impacto": "alto",
+  "descricao": "Distributed Lock — Task 2 (Bug): CachedProdutoRepository.DebitarEstoqueAsync sempre retorna true",
+  "detalhes": "Bug crítico: `CachedProdutoRepository.DebitarEstoqueAsync` tem um stub que retorna `true` sem chamar o repositório interno. O handler nunca detecta falha real de debit.\n\n**Arquivo**: `Salematic.Infrastructure/Repositories/CachedProdutoRepository.cs`\n\n## Correção\nSubstituir o stub pela delegação ao inner repository e invalidar o cache de estoque após debit bem-sucedido:\n\n```csharp\npublic async Task<bool> DebitarEstoqueAsync(int produtoId, int quantidade)\n{\n    var debitado = await _inner.DebitarEstoqueAsync(produtoId, quantidade);\n    if (debitado)\n        await _cache.RemoveAsync($\"estoque:{produtoId}\");\n    return debitado;\n}\n```\n\n## Verificação\n- POST api/pedidos/webhook com quantidade maior que o estoque disponível deve retornar falha de estoque, não sucesso",
+  "url_externa": null,
+  "status": "pendente",
+  "impeditivo": false,
+  "resultado": null,
+  "prompt_agente": null,
+  "diretorio_alvo": "T:\\Developer\\salematic",
+  "timestamp": "2026-05-28T00:00:00Z",
+  "pendencias": null,
+  "resposta_usuario": null,
+  "timestamp_atualizacao": "2026-05-28T00:00:00Z"
+}

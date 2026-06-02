@@ -3,6 +3,7 @@ using System.Runtime.InteropServices;
 using System.Text.Json;
 using DevAutomation.Models;
 using DevAutomation.Services;
+using DevAutomation.Services.Store;
 using Microsoft.AspNetCore.Mvc;
 
 namespace DevAutomation.Controllers;
@@ -13,9 +14,12 @@ public class DevPanelController : ControllerBase
 {
     private readonly ConfigService _config;
     private readonly GeminiService _gemini;
+    private readonly ClaudeService _claude;
     private readonly OrchestratorService _orchestrator;
     private readonly RagIndexerService _ragIndexer;
     private readonly RagService _ragService;
+    private readonly FeatureFlags _featureFlags;
+    private readonly IDevRequestStore _store;
     private readonly string _templatesDir;
     private readonly string _switchScript;
     private readonly ILogger<DevPanelController> _logger;
@@ -24,20 +28,27 @@ public class DevPanelController : ControllerBase
     private static readonly JsonSerializerOptions _jsonWriteOpts = new() { WriteIndented = true };
     private static readonly JsonSerializerOptions _jsonReadCiOpts = new() { PropertyNameCaseInsensitive = true };
 
+
     public DevPanelController(
         ConfigService config,
         GeminiService gemini,
+        ClaudeService claude,
         OrchestratorService orchestrator,
         RagIndexerService ragIndexer,
         RagService ragService,
+        FeatureFlags featureFlags,
+        IDevRequestStore store,
         IConfiguration cfg,
         ILogger<DevPanelController> logger)
     {
         _config       = config;
         _gemini       = gemini;
+        _claude       = claude;
         _orchestrator = orchestrator;
         _ragIndexer   = ragIndexer;
         _ragService   = ragService;
+        _featureFlags = featureFlags;
+        _store        = store;
         _cfg          = cfg;
         _templatesDir = cfg["DevAutomation:TemplatesDir"]!;
         _switchScript = cfg["DevAutomation:SwitchScript"]!;
@@ -49,6 +60,63 @@ public class DevPanelController : ControllerBase
     [HttpGet("health")]
     public IActionResult Health() =>
         Ok(new { status = "ok", timestamp = DateTime.UtcNow.ToString("O") });
+
+    // ── PLATFORM ──────────────────────────────────────────────────────────────
+
+    [HttpGet("platform")]
+    public IActionResult Platform()
+    {
+        var isWindows = RuntimeInformation.IsOSPlatform(OSPlatform.Windows);
+        var isLinux   = RuntimeInformation.IsOSPlatform(OSPlatform.Linux);
+        var isMacOS   = RuntimeInformation.IsOSPlatform(OSPlatform.OSX);
+
+        var os = isWindows ? "windows" : isLinux ? "linux" : isMacOS ? "macos" : "unknown";
+
+        var wtAvailable = isWindows && IsCommandAvailable("wt");
+
+        return Ok(new
+        {
+            os,
+            features = new
+            {
+                visualStudio          = isWindows,
+                serverPullConfig      = isWindows,
+                browseDialog          = isWindows,
+                startApps             = wtAvailable,
+                restartServer         = true,
+                ragEnabled            = _featureFlags.RagEnabled,
+                orchestratorAvailable = _featureFlags.OrchestratorAvailable,
+                devAgentGeminiEnabled = _featureFlags.DevAgentGeminiEnabled,
+                devAgentClaudeEnabled = _featureFlags.DevAgentClaudeEnabled
+            },
+            services = new
+            {
+                qdrant    = _featureFlags.QdrantAvailable,
+                ollama    = _featureFlags.OllamaAvailable,
+                claudeCli = _featureFlags.OrchestratorAvailable
+            }
+        });
+    }
+
+    private static bool IsCommandAvailable(string command)
+    {
+        try
+        {
+            var psi = new ProcessStartInfo
+            {
+                FileName               = RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "where" : "which",
+                Arguments              = command,
+                RedirectStandardOutput = true,
+                RedirectStandardError  = true,
+                UseShellExecute        = false,
+                CreateNoWindow         = true
+            };
+            using var p = Process.Start(psi)!;
+            p.WaitForExit(2000);
+            return p.ExitCode == 0;
+        }
+        catch { return false; }
+    }
 
     // ── CONFIG ────────────────────────────────────────────────────────────────
 
@@ -98,48 +166,204 @@ public class DevPanelController : ControllerBase
     [HttpPost("switch")]
     public IActionResult Switch([FromBody] SwitchRequest body)
     {
-        var args = new List<string>
-        {
-            "-ExecutionPolicy", "Bypass",
-            "-File", $"\"{_switchScript}\"",
-            "-Environment", body.Environment,
-            "-Client", body.Client ?? "default"
-        };
+        var messages = new List<string>();
+        var cfg      = _config.LoadConfig();
 
+        var apiList = cfg.Apis.AsEnumerable();
         if (!string.IsNullOrEmpty(body.Api) && body.Api != "all")
-            args.AddRange(["-Api", body.Api]);
-        if (body.GitPull)           args.Add("-GitPull");
-        if (body.OpenVisualStudio)  args.Add("-OpenVisualStudio");
-        if (body.CloseVisualStudio) args.Add("-CloseVisualStudio");
-
-        try
         {
-            var psi = new ProcessStartInfo
+            var filter = body.Api.Split(',').Select(a => a.Trim()).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            apiList = apiList.Where(a => filter.Contains(a.Name));
+        }
+        var apis = apiList.ToList();
+
+        // Passo 1 — Fechar IDE (Windows only)
+        if (body.CloseVisualStudio)
+        {
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
             {
-                FileName               = "powershell.exe",
-                Arguments              = string.Join(" ", args),
-                RedirectStandardOutput = true,
-                RedirectStandardError  = true,
-                UseShellExecute        = false
-            };
-
-            using var proc = Process.Start(psi)!;
-            var output = proc.StandardOutput.ReadToEnd();
-            var error  = proc.StandardError.ReadToEnd();
-            proc.WaitForExit();
-
-            // Atualiza state para todas as APIs
-            var cfg = _config.LoadConfig();
-            foreach (var api in cfg.Apis)
-                _config.SetState(api.Name, body.Client ?? "default");
-
-            var messages = (output + error).Split('\n', StringSplitOptions.RemoveEmptyEntries);
-            return Ok(new { success = true, messages });
+                foreach (var p in Process.GetProcessesByName("devenv"))
+                {
+                    try
+                    {
+                        p.CloseMainWindow();
+                        if (!p.WaitForExit(15000)) p.Kill();
+                        messages.Add($"[VS] Fechado: {p.MainWindowTitle}");
+                    }
+                    catch { }
+                    finally { p.Dispose(); }
+                }
+            }
+            else
+            {
+                messages.Add("[VS] Fechar IDE ignorado (não suportado nesta plataforma)");
+            }
         }
-        catch (Exception ex)
+
+        // Passo 2 — Git pull
+        if (body.GitPull)
         {
-            return StatusCode(500, new { success = false, error = ex.Message });
+            var seenRepos = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var api in apis)
+            {
+                if (string.IsNullOrEmpty(api.GitRepo) || seenRepos.Contains(api.GitRepo)) continue;
+                seenRepos.Add(api.GitRepo);
+
+                if (!Directory.Exists(api.GitRepo))
+                {
+                    messages.Add($"[GIT] Repo não encontrado: {api.GitRepo}");
+                    continue;
+                }
+
+                foreach (var a in cfg.Apis.Where(a => !string.IsNullOrEmpty(a.ConfigFile)))
+                    RunGit($"checkout -- \"{a.ConfigFile}\"", api.GitRepo);
+
+                RunGit("fetch origin", api.GitRepo);
+                RunGit($"reset --hard origin/{body.Environment}", api.GitRepo);
+                messages.Add($"[GIT] {api.GitRepo} → {body.Environment}");
+            }
         }
+
+        // Passo 3 — Aplicar configurações
+        foreach (var api in apis)
+        {
+            if (string.IsNullOrEmpty(api.ConfigFile)) continue;
+
+            var ext      = api.ConfigType == "json" ? "json" : "xml";
+            var client   = body.Client ?? "default";
+            var template = Path.Combine(_templatesDir, api.Name, body.Environment, $"{client}.{ext}");
+
+            if (!System.IO.File.Exists(template))
+            {
+                var fallback = Path.Combine(_templatesDir, api.Name, body.Environment, $"default.{ext}");
+                if (System.IO.File.Exists(fallback))
+                {
+                    template = fallback;
+                    messages.Add($"[CONFIG] {api.Name}: usando template default");
+                }
+                else
+                {
+                    messages.Add($"[CONFIG] {api.Name}: template não encontrado — {template}");
+                    continue;
+                }
+            }
+
+            try
+            {
+                if (api.ConfigType == "json")
+                    ApplyJsonConfig(api.ConfigFile, template);
+                else
+                    ApplyWebConfig(api.ConfigFile, template);
+
+                messages.Add($"[CONFIG] {api.Name}: OK");
+            }
+            catch (Exception ex)
+            {
+                messages.Add($"[CONFIG] {api.Name}: ERRO — {ex.Message}");
+            }
+        }
+
+        // Passo 4 — Abrir IDE
+        if (body.OpenVisualStudio)
+        {
+            var seenSln = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var api in apis)
+            {
+                if (string.IsNullOrEmpty(api.SolutionPath) || seenSln.Contains(api.SolutionPath)) continue;
+                seenSln.Add(api.SolutionPath);
+                OpenIde(api.SolutionPath, messages);
+            }
+        }
+
+        foreach (var api in apis)
+            _config.SetState(api.Name, body.Client ?? "default");
+
+        return Ok(new { success = true, messages });
+    }
+
+    private static void ApplyJsonConfig(string targetFile, string templateFile) =>
+        System.IO.File.Copy(templateFile, targetFile, overwrite: true);
+
+    private static void ApplyWebConfig(string targetFile, string templateFile)
+    {
+        var target   = new System.Xml.XmlDocument();
+        var template = new System.Xml.XmlDocument();
+        target.Load(targetFile);
+        template.Load(templateFile);
+
+        MergeXmlSection(target, template, "//appSettings",    "add", "key",  "value");
+        MergeXmlSection(target, template, "//connectionStrings", "add", "name", "connectionString");
+
+        var settings = new System.Xml.XmlWriterSettings
+        {
+            Indent      = true,
+            IndentChars = "  ",
+            Encoding    = System.Text.Encoding.UTF8
+        };
+        using var writer = System.Xml.XmlWriter.Create(targetFile, settings);
+        target.Save(writer);
+    }
+
+    private static void MergeXmlSection(
+        System.Xml.XmlDocument target, System.Xml.XmlDocument template,
+        string xpath, string nodeName, string keyAttr, string valueAttr)
+    {
+        var targetSection   = target.SelectSingleNode(xpath);
+        var templateSection = template.SelectSingleNode(xpath);
+        if (targetSection is null || templateSection is null) return;
+
+        foreach (System.Xml.XmlNode node in templateSection.SelectNodes(nodeName)!)
+        {
+            var key      = node.Attributes?[keyAttr]?.Value;
+            if (key is null) continue;
+            var existing = targetSection.SelectSingleNode($"{nodeName}[@{keyAttr}='{key}']");
+            if (existing?.Attributes?[valueAttr] != null)
+                existing.Attributes[valueAttr]!.Value = node.Attributes![valueAttr]?.Value ?? "";
+            else
+                targetSection.AppendChild(target.ImportNode(node, true));
+        }
+    }
+
+    private static void OpenIde(string solutionPath, List<string> messages)
+    {
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+        {
+            var devenv = FindDevEnvViaVswhere();
+            if (devenv != null)
+            {
+                Process.Start(new ProcessStartInfo { FileName = devenv, Arguments = $"\"{solutionPath}\"", UseShellExecute = true });
+                messages.Add($"[IDE] Abrindo VS: {Path.GetFileName(solutionPath)}");
+                return;
+            }
+            messages.Add("[IDE] devenv.exe não encontrado via vswhere — verifique a instalação do Visual Studio");
+            return;
+        }
+
+        foreach (var editor in new[] { "code", "rider" })
+        {
+            if (!IsCommandAvailable(editor)) continue;
+            Process.Start(new ProcessStartInfo { FileName = editor, Arguments = $"\"{solutionPath}\"", UseShellExecute = false });
+            messages.Add($"[IDE] Abrindo {editor}: {Path.GetFileName(solutionPath)}");
+            return;
+        }
+
+        messages.Add($"[IDE] Nenhum IDE encontrado para: {Path.GetFileName(solutionPath)}");
+    }
+
+    private static string? FindDevEnvViaVswhere()
+    {
+        // vswhere.exe é instalado pelo Visual Studio Installer em qualquer localização
+        var vswhere = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86),
+            "Microsoft Visual Studio", "Installer", "vswhere.exe");
+
+        if (!System.IO.File.Exists(vswhere)) return null;
+
+        var installPath = RunProcess(vswhere, "-latest -property installationPath").Trim();
+        if (string.IsNullOrEmpty(installPath)) return null;
+
+        var devenv = Path.Combine(installPath, "Common7", "IDE", "devenv.exe");
+        return System.IO.File.Exists(devenv) ? devenv : null;
     }
 
     // ── TEMPLATE ──────────────────────────────────────────────────────────────
@@ -253,26 +477,48 @@ public class DevPanelController : ControllerBase
     [HttpPost("server/pullconfig")]
     public IActionResult ServerPullConfig([FromBody] ServerPullRequest body)
     {
-        var scriptDir = Path.GetDirectoryName(_switchScript)!;
-        var script    = Path.Combine(scriptDir, "Server-Operations.ps1");
+        if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+            return StatusCode(501, new { success = false, error = "Pull de config via SMB não disponível nesta plataforma." });
 
-        var psi = new ProcessStartInfo
+        var cfg       = _config.LoadConfig();
+        var serverCfg = cfg.Servers?.GetValueOrDefault(body.Environment);
+        if (serverCfg is null)
+            return BadRequest(new { success = false, error = $"Nenhum servidor configurado para '{body.Environment}'" });
+
+        RunProcess("net", $"use \"{serverCfg.Host}\" /user:\"{serverCfg.User}\" \"{serverCfg.Password}\"");
+
+        var results = new List<object>();
+        try
         {
-            FileName  = "powershell.exe",
-            Arguments = $"-ExecutionPolicy Bypass -Command \". '{script}'; Invoke-ServerPullConfig " +
-                        $"-Environment '{body.Environment}' -Client '{body.Client ?? "default"}' " +
-                        $"-ApiName '{body.Api ?? "all"}' " +
-                        $"-ConfigDir '{Path.GetDirectoryName(Path.GetDirectoryName(_switchScript))}\\config' " +
-                        $"-TemplatesDir '{_templatesDir}'\"",
-            RedirectStandardOutput = true,
-            UseShellExecute        = false
-        };
+            var apisToProcess = serverCfg.Apis.AsEnumerable();
+            if (!string.IsNullOrEmpty(body.Api) && body.Api != "all")
+                apisToProcess = apisToProcess.Where(a => a.Name == body.Api);
 
-        using var proc = Process.Start(psi)!;
-        var output = proc.StandardOutput.ReadToEnd();
-        proc.WaitForExit();
+            foreach (var api in apisToProcess)
+            {
+                var uncPath  = Path.Combine(serverCfg.Host, api.ConfigPath);
+                var ext      = api.ConfigType == "json" ? "json" : "xml";
+                var destDir  = Path.Combine(_templatesDir, api.Name, body.Environment);
+                var destFile = Path.Combine(destDir, $"{body.Client ?? "default"}.{ext}");
+                Directory.CreateDirectory(destDir);
 
-        return Ok(new { success = true, output });
+                if (System.IO.File.Exists(uncPath))
+                {
+                    System.IO.File.Copy(uncPath, destFile, overwrite: true);
+                    results.Add(new { name = api.Name, success = true, dest = destFile });
+                }
+                else
+                {
+                    results.Add(new { name = api.Name, success = false, error = $"Não encontrado: {uncPath}" });
+                }
+            }
+        }
+        finally
+        {
+            RunProcess("net", $"use \"{serverCfg.Host}\" /delete");
+        }
+
+        return Ok(new { success = true, results });
     }
 
     // ── RESTART ───────────────────────────────────────────────────────────────
@@ -280,13 +526,18 @@ public class DevPanelController : ControllerBase
     [HttpPost("restart")]
     public IActionResult Restart()
     {
+        var rootPath = _cfg["DevAutomation:RootPath"]!;
+        var csproj   = Path.Combine(rootPath, "src", "DevAutomation.Server", "DevAutomation.Server.csproj");
+
         Task.Run(async () =>
         {
             await Task.Delay(500);
             Process.Start(new ProcessStartInfo
             {
-                FileName        = @"T:\Developer\RepositorioTrabalho\tecbakana\ForgeV2\batches\start-server.bat",
-                UseShellExecute = true
+                FileName         = "dotnet",
+                Arguments        = $"run --project \"{csproj}\" --configuration Release",
+                UseShellExecute  = true,
+                WorkingDirectory = rootPath
             });
             Environment.Exit(0);
         });
@@ -294,6 +545,33 @@ public class DevPanelController : ControllerBase
     }
 
     // ── AGENT ─────────────────────────────────────────────────────────────────
+
+    [HttpGet("agent/config")]
+    public IActionResult AgentConfig()
+    {
+        var cfg        = _config.LoadConfig();
+        var geminiKey  = cfg.Agent?.ApiKey ?? _cfg["agent:apiKey"] ?? _cfg["Agent:apiKey"] ?? "";
+        var claudeAvailable = _featureFlags.DevAgentClaudeEnabled;
+
+        return Ok(new
+        {
+            llms = new[]
+            {
+                new { id = "gemini", label = "Gemini", available = !string.IsNullOrEmpty(geminiKey),
+                      hint = (string?)null,
+                      models = new[] {
+                          new { id = "gemini-2.5-flash", label = "Gemini Flash" },
+                          new { id = "gemini-2.5-pro",   label = "Gemini Pro"   }
+                      }},
+                new { id = "claude", label = "Claude", available = claudeAvailable,
+                      hint = claudeAvailable ? null : "Claude Code CLI não encontrado",
+                      models = new[] {
+                          new { id = "claude-sonnet-4-6",         label = "Claude Sonnet" },
+                          new { id = "claude-haiku-4-5-20251001", label = "Claude Haiku"  }
+                      }}
+            }
+        });
+    }
 
     [HttpPost("agent")]
     public async Task<IActionResult> Agent([FromBody] AgentRequest body)
@@ -315,33 +593,102 @@ public class DevPanelController : ControllerBase
         var state    = _config.LoadState();
         var apiNames = string.Join(", ", cfg.Apis.Select(a => a.Name));
 
+
         var systemCtx = $"""
-            Você é um assistente de ambiente de desenvolvimento chamado DevAgent.
+            Você é o DevAgent — um Arquiteto de Sistemas Sênior com ampla experiência em back-end,
+            distribuídos e boas práticas de engenharia de software.
             Responda sempre em português brasileiro, de forma concisa e direta.
 
-            Quando identificar uma limitação, funcionalidade ausente ou problema no devautomation,
-            use a ferramenta solicitar_desenvolvimento para registrar a melhoria. Faça isso proativamente.
+            ## IDENTIDADE E POSTURA
 
-            ESTADO ATUAL:
-            - APIs disponíveis: {apiNames}
+            - Você atua como arquiteto e copiloto técnico, não como executor cego de pedidos.
+            - Antes de qualquer ação, entenda o projeto envolvido: stack, padrões arquiteturais,
+              contexto de negócio e histórico recente. Use as ferramentas disponíveis para isso
+              (ler_arquivo, git_log, listar_arquivos).
+            - Nunca inicie nada com dúvidas sobre o que deve ser feito ou sobre os padrões do projeto.
+              Se houver ambiguidade técnica ou de requisito, faça perguntas até ter clareza total.
+            - Se o solicitante demonstrar dúvidas sobre o que quer ou sobre como o projeto funciona,
+              oriente-o a se aprofundar antes de registrar uma solicitação. Não registre dev-requests
+              baseadas em requisitos vagos ou mal compreendidos.
+
+            ## FLUXO PARA CRIAR DEV-REQUESTS
+
+            1. Pergunte em qual projeto/API a alteração se aplica.
+            2. Use git_log e ler_arquivo (CLAUDE.md, README) para entender o contexto atual.
+            3. Verifique o backlog existente para evitar duplicatas.
+            4. Faça as perguntas necessárias até ter clareza sobre: o que fazer, por que fazer
+               e como validar que está correto.
+            5. Somente então use solicitar_desenvolvimento com uma descrição e detalhes precisos.
+            6. Se o desenvolvedor já implementou a feature, marque implementado_pelo_usuario = true
+               para que vá direto para testes sem passar pelo agente.
+
+            ## FORMATO DE DEV-REQUEST
+
+            - tipo: feature | bugfix | config | refactor
+            - impacto: baixo | medio | alto
+            - descricao: frase clara no imperativo ("Adicionar endpoint X", "Corrigir validação Y")
+            - detalhes: contexto técnico, arquivos envolvidos, comportamento esperado, critérios de aceite
+
+            ## ESTADO ATUAL DO AMBIENTE
+
+            - Projetos gerenciados: {apiNames}
             - Estado: {JsonSerializer.Serialize(state)}
 
-            REGRAS:
-            - Ao executar ações, confirme o que foi feito de forma resumida
-            - Se o usuário pedir algo ambíguo, pergunte antes de executar
-            - Para switch de ambiente sem especificar APIs, use all
-            - Nunca invente dados — use sempre as ferramentas para buscar informações reais
+            ## MODELO DE DEV-REQUEST (referência de formato — não é um exemplo real)
+
+            {JsonSerializer.Serialize(new Models.DevRequest
+            {
+                Api                     = "nome-do-projeto",
+                Tipo                    = "feature | bugfix | config | refactor",
+                Impacto                 = "baixo | medio | alto",
+                Descricao               = "Verbo no imperativo + o que + onde",
+                Detalhes                = "Contexto técnico: camadas afetadas, arquivos relevantes, comportamento esperado, critérios de aceite, edge cases.",
+                Status                  = "pendente",
+                ImplementadoPeloUsuario = false
+            }, _jsonWriteOpts)}
+
+            ## ENTENDIMENTO DO PROJETO ALVO
+
+            Antes de criar uma dev-request, use as ferramentas para entender o projeto destino:
+            - git_log(api) — histórico recente, o que foi entregue, padrões de commit
+            - ler_arquivo(CLAUDE.md do projeto) — stack, arquitetura, regras do projeto
+            - listar_arquivos(api, glob: "*.md") — documentação existente
+
+            Faça isso SOMENTE para o projeto alvo da solicitação, não para outros projetos.
+            O objetivo é minimizar tokens: busque apenas o que for necessário para entender
+            o contexto e evitar conflitos com o que já foi implementado.
+
+            ## REGRAS GERAIS
+
+            - Ao executar ações, confirme resumidamente o que foi feito.
+            - Para switch de ambiente sem especificar APIs, use all.
+            - Nunca invente dados — use sempre as ferramentas para buscar informações reais.
+            - Nunca registre uma dev-request sem antes confirmar com o solicitante o que será registrado.
+            - Quando a solicitação afetar layout ou UI, inclua nos detalhes: qual componente/tela é
+              afetado e se há alguma dev-request anterior que serviu de referência de layout e que
+              deve ser atualizada para refletir o novo padrão.
             """;
 
-        var history = body.History?.Select(h => new GeminiMessage(h.Role, h.Parts)).ToList();
+        var history    = body.History?.Select(h => new GeminiMessage(h.Role, h.Parts)).ToList();
+        var modelToUse = !string.IsNullOrWhiteSpace(body.Model) ? body.Model : agent.Model;
+        var llm        = body.Llm ?? "gemini";
 
-        var resp = await _gemini.SendAsync(
-            agent.ApiKey, agent.Model, agent.Url,
-            body.Message ?? "",
-            systemCtx,
-            history,
-            imageBase64: body.ImageBase64,
-            imageMimeType: body.ImageMimeType);
+        var claudePath = _cfg["DevAutomation:ClaudePath"] ?? "claude";
+
+        GeminiResponse resp;
+        var forgeRoot = _cfg["DevAutomation:RootPath"];
+
+        if (llm == "claude")
+        {
+            resp = await _claude.SendAsync(claudePath, modelToUse, body.Message ?? "", systemCtx, history, forgeRoot);
+        }
+        else
+        {
+            resp = await _gemini.SendAsync(
+                agent.ApiKey, modelToUse, agent.Url,
+                body.Message ?? "", systemCtx, history,
+                imageBase64: body.ImageBase64, imageMimeType: body.ImageMimeType);
+        }
 
         if (resp.Type == "error")
             return Ok(new { type = "error", text = resp.Text });
@@ -361,7 +708,6 @@ public class DevPanelController : ControllerBase
                     var pull     = args?["gitPull"]?.GetValue<bool>() ?? false;
                     var openVS   = args?["openVS"]?.GetValue<bool>() ?? false;
                     var closeVS  = args?["closeVS"]?.GetValue<bool>() ?? false;
-
                     var switchResp = Switch(new SwitchRequest
                     {
                         Environment = envArg, Client = clientArg, Api = apisArg,
@@ -371,8 +717,7 @@ public class DevPanelController : ControllerBase
                     break;
 
                 case "get_git_status":
-                    var gsApi = args?["api"]?.GetValue<string>();
-                    result = (GitStatus(gsApi) as OkObjectResult)?.Value;
+                    result = (GitStatus(args?["api"]?.GetValue<string>()) as OkObjectResult)?.Value;
                     break;
 
                 case "get_git_ahead_behind":
@@ -386,23 +731,31 @@ public class DevPanelController : ControllerBase
                 case "solicitar_desenvolvimento":
                     var devReq = new Models.DevRequest
                     {
-                        Id            = Guid.NewGuid().ToString(),
-                        Api           = args?["api"]?.GetValue<string>() ?? "devautomation",
-                        Tipo          = args?["tipo"]?.GetValue<string>() ?? "feature",
-                        Impacto       = args?["impacto"]?.GetValue<string>() ?? "medio",
-                        Descricao     = args?["descricao"]?.GetValue<string>() ?? "",
-                        Detalhes      = args?["detalhes"]?.GetValue<string>(),
-                        Status        = "pending",
-                        DiretorioAlvo = "T:\\devautomation\\DevAutomation.Server",
-                        Timestamp     = DateTime.UtcNow
+                        Id                      = Guid.NewGuid().ToString(),
+                        Api                     = args?["api"]?.GetValue<string>() ?? "devautomation",
+                        Tipo                    = args?["tipo"]?.GetValue<string>() ?? "feature",
+                        Impacto                 = args?["impacto"]?.GetValue<string>() ?? "medio",
+                        Descricao               = args?["descricao"]?.GetValue<string>() ?? "",
+                        Detalhes                = args?["detalhes"]?.GetValue<string>(),
+                        Status                  = "pendente",
+                        ImplementadoPeloUsuario = args?["implementado_pelo_usuario"]?.GetValue<bool>() ?? false,
+                        DiretorioAlvo           = Path.Combine(_cfg["DevAutomation:RootPath"]!, "src", "DevAutomation.Server"),
+                        Timestamp               = DateTime.UtcNow
                     };
-                    var devReqDir  = _cfg["DevAutomation:DevRequestsDir"]!;
-                    var devReqPath = Path.Combine(devReqDir, $"{devReq.Id}.json");
-                    Directory.CreateDirectory(devReqDir);
-                    System.IO.File.WriteAllText(devReqPath,
-                        System.Text.Json.JsonSerializer.Serialize(devReq,
-                            _jsonWriteOpts));
+                    await _store.SaveAsync(devReq);
                     result = new { mensagem = "Solicitação registrada com sucesso.", id = devReq.Id };
+                    break;
+
+                case "ler_arquivo":
+                    result = LerArquivo(args?["caminho"]?.GetValue<string>() ?? "");
+                    break;
+
+                case "git_log":
+                    result = GitLog(args?["api"]?.GetValue<string>() ?? "", args?["quantidade"]?.GetValue<int>() ?? 15);
+                    break;
+
+                case "listar_arquivos":
+                    result = ListarArquivos(args?["api"]?.GetValue<string>() ?? "", args?["subdir"]?.GetValue<string>(), args?["glob"]?.GetValue<string>());
                     break;
 
                 default:
@@ -410,15 +763,25 @@ public class DevPanelController : ControllerBase
                     break;
             }
 
-            var updatedHistory = new List<GeminiMessage>(history ?? [])
+            GeminiResponse finalResp;
+            if (llm == "claude")
             {
-                new("user",  [new { text = body.Message ?? "" }]),
-                new("model", [new { functionCall = new { name = toolName, args = args } }])
-            };
-
-            var finalResp = await _gemini.SendToolResultAsync(
-                agent.ApiKey, agent.Model, agent.Url,
-                systemCtx, updatedHistory, toolName, result ?? new { });
+                var updatedHistory = new List<GeminiMessage>(history ?? [])
+                    { new("user", [new { text = body.Message ?? "" }]) };
+                finalResp = await _claude.SendToolResultAsync(
+                    claudePath, modelToUse, systemCtx, updatedHistory, toolName, result ?? new { }, forgeRoot);
+            }
+            else
+            {
+                var updatedHistory = new List<GeminiMessage>(history ?? [])
+                {
+                    new("user",  [new { text = body.Message ?? "" }]),
+                    new("model", [new { functionCall = new { name = toolName, args = args } }])
+                };
+                finalResp = await _gemini.SendToolResultAsync(
+                    agent.ApiKey, modelToUse, agent.Url,
+                    systemCtx, updatedHistory, toolName, result ?? new { });
+            }
 
             return Ok(new { type = "text", text = finalResp.Text, action = toolName });
         }
@@ -429,7 +792,7 @@ public class DevPanelController : ControllerBase
     // ── ROADMAP ───────────────────────────────────────────────────────────────
 
     [HttpPost("roadmap/promote")]
-    public IActionResult RoadmapPromote([FromBody] RoadmapPromoteRequest body)
+    public async Task<IActionResult> RoadmapPromote([FromBody] RoadmapPromoteRequest body)
     {
         var panelDir     = _cfg["DevAutomation:PanelDir"]!;
         var projectsPath = Path.Combine(panelDir, "projects.json");
@@ -463,11 +826,7 @@ public class DevPanelController : ControllerBase
             Timestamp = DateTime.UtcNow
         };
 
-        var devReqDir  = _orchestrator.DevRequestsDir;
-        Directory.CreateDirectory(devReqDir);
-        var path = Path.Combine(devReqDir, $"{devReq.Id}.json");
-        System.IO.File.WriteAllText(path,
-            JsonSerializer.Serialize(devReq, _jsonWriteOpts));
+        await _store.SaveAsync(devReq);
 
         // Atualiza status do item para in_progress
         item["status"] = "in_progress";
@@ -507,53 +866,51 @@ public class DevPanelController : ControllerBase
     // ── DEV-REQUESTS ─────────────────────────────────────────────────────────
 
     [HttpGet("devrequests")]
-    public IActionResult GetDevRequests()
+    public async Task<IActionResult> GetDevRequests()
     {
-        return Ok(_orchestrator.ListAll());
+        return Ok(await _store.ListAllAsync());
+    }
+
+    [HttpGet("devrequests/stats")]
+    public async Task<IActionResult> GetDevRequestStats()
+    {
+        var all = await _store.ListAllAsync();
+        var porStatus = all
+            .GroupBy(r => r.Status)
+            .ToDictionary(g => g.Key, g => g.Count());
+
+        return Ok(new { total = porStatus.Values.Sum(), por_status = porStatus });
     }
 
     [HttpPost("devrequests")]
-    public IActionResult CreateDevRequest([FromBody] DevRequest request)
+    public async Task<IActionResult> CreateDevRequest([FromBody] DevRequest request)
     {
         request.Id        = Guid.NewGuid().ToString();
         request.Status    = "pendente";
         request.Timestamp = DateTime.UtcNow;
-
-        var dir  = _orchestrator.DevRequestsDir;
-        Directory.CreateDirectory(dir);
-
-        var path = Path.Combine(dir, $"{request.Id}.json");
-        System.IO.File.WriteAllText(path, JsonSerializer.Serialize(request, _jsonWriteOpts));
-
+        await _store.SaveAsync(request);
         return Ok(new { success = true, id = request.Id });
     }
 
     [HttpPut("devrequests/{id}")]
-    public IActionResult EditDevRequest(string id, [FromBody] DevRequestEditBody body)
+    public async Task<IActionResult> EditDevRequest(string id, [FromBody] DevRequestEditBody body)
     {
-        var dir  = _orchestrator.DevRequestsDir;
-        var path = Path.Combine(dir, $"{id}.json");
-
-        if (!System.IO.File.Exists(path))
+        var req = await _store.GetByIdAsync(id);
+        if (req is null)
             return NotFound(new { success = false, error = "Dev request não encontrada." });
 
-        var json = System.IO.File.ReadAllText(path);
-        var req  = JsonSerializer.Deserialize<DevRequest>(json, _jsonReadCiOpts);
-        if (req is null)
-            return BadRequest(new { success = false, error = "JSON inválido." });
-
-        req.Api                  = body.Api ?? req.Api;
-        req.Tipo                 = body.Tipo ?? req.Tipo;
-        req.Impacto              = body.Impacto ?? req.Impacto;
-        req.Descricao            = body.Descricao ?? req.Descricao;
-        req.Detalhes             = body.Detalhes ?? req.Detalhes;
-        req.DiretorioAlvo        = body.DiretorioAlvo ?? req.DiretorioAlvo;
-        req.ComentariosTeste        = body.ComentariosTeste ?? req.ComentariosTeste;
+        req.Api                     = body.Api                  ?? req.Api;
+        req.Tipo                    = body.Tipo                 ?? req.Tipo;
+        req.Impacto                 = body.Impacto              ?? req.Impacto;
+        req.Descricao               = body.Descricao            ?? req.Descricao;
+        req.Detalhes                = body.Detalhes             ?? req.Detalhes;
+        req.DiretorioAlvo           = body.DiretorioAlvo        ?? req.DiretorioAlvo;
+        req.ComentariosTeste        = body.ComentariosTeste     ?? req.ComentariosTeste;
         req.ConsideracoesRefazer    = body.ConsideracoesRefazer ?? req.ConsideracoesRefazer;
+        if (body.ImplementadoPeloUsuario.HasValue)
+            req.ImplementadoPeloUsuario = body.ImplementadoPeloUsuario.Value;
         req.TimestampAtualizacao = DateTime.UtcNow;
-
-        System.IO.File.WriteAllText(path, JsonSerializer.Serialize(req, _jsonWriteOpts));
-
+        await _store.SaveAsync(req);
         return Ok(new { success = true });
     }
 
@@ -565,25 +922,16 @@ public class DevPanelController : ControllerBase
     }
 
     [HttpPost("devrequests/responder")]
-    public IActionResult DevRequestResponder([FromBody] DevRequestResponderBody body)
+    public async Task<IActionResult> DevRequestResponder([FromBody] DevRequestResponderBody body)
     {
-        var dir  = _orchestrator.DevRequestsDir;
-        var path = Path.Combine(dir, $"{body.Id}.json");
-
-        if (!System.IO.File.Exists(path))
-            return NotFound(new { success = false, error = "Dev request não encontrada." });
-
-        var json = System.IO.File.ReadAllText(path);
-        var req  = JsonSerializer.Deserialize<DevRequest>(json, _jsonReadCiOpts);
+        var req = await _store.GetByIdAsync(body.Id ?? "");
         if (req is null)
-            return BadRequest(new { success = false, error = "JSON inválido." });
+            return NotFound(new { success = false, error = "Dev request não encontrada." });
 
         req.RespostaUsuario      = body.Resposta;
         req.Status               = "pendente";
         req.TimestampAtualizacao = DateTime.UtcNow;
-
-        System.IO.File.WriteAllText(path, JsonSerializer.Serialize(req, _jsonWriteOpts));
-
+        await _store.SaveAsync(req);
         return Ok(new { success = true });
     }
 
@@ -731,39 +1079,53 @@ public class DevPanelController : ControllerBase
         if (api.RunTargets is null || api.RunTargets.Count == 0)
             return BadRequest(new { message = "Nenhum runTarget configurado para esta API." });
 
-        // Mata processos anteriores (dotnet + node filhos) e aguarda liberação das portas
         KillDotnetInTargets(api.RunTargets.Select(t => t.Dir).ToList());
         await Task.Delay(2000);
 
         foreach (var target in api.RunTargets)
         {
-            var args = $"new-tab --title \"{target.Name}\" --startingDirectory \"{target.Dir}\" pwsh -NoExit -Command \"{target.Command}\"";
-            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows) && IsCommandAvailable("wt"))
             {
-                FileName = "wt",
-                Arguments = args,
-                UseShellExecute = true
-            });
+                var args = $"new-tab --title \"{target.Name}\" --startingDirectory \"{target.Dir}\" pwsh -NoExit -Command \"{target.Command}\"";
+                Process.Start(new ProcessStartInfo { FileName = "wt", Arguments = args, UseShellExecute = true });
+            }
+            else if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
+            {
+                var script = $"tell application \\\"Terminal\\\" to do script \\\"cd '{target.Dir}' && {target.Command}\\\"";
+                Process.Start(new ProcessStartInfo { FileName = "osascript", Arguments = $"-e \"{script}\"", UseShellExecute = false });
+            }
+            else
+            {
+                // Linux / container: inicia em background sem terminal gráfico
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName         = "bash",
+                    Arguments        = $"-c \"{target.Command} &\"",
+                    UseShellExecute  = false,
+                    WorkingDirectory = target.Dir
+                });
+            }
         }
 
         if (!string.IsNullOrEmpty(api.BrowserUrl))
         {
-            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
-            {
-                FileName = api.BrowserUrl,
-                UseShellExecute = true
-            });
+            var opener = RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? null
+                       : RuntimeInformation.IsOSPlatform(OSPlatform.OSX)     ? "open"
+                       : "xdg-open";
+            if (opener is null)
+                Process.Start(new ProcessStartInfo { FileName = api.BrowserUrl, UseShellExecute = true });
+            else
+                Process.Start(new ProcessStartInfo { FileName = opener, Arguments = api.BrowserUrl, UseShellExecute = false });
         }
 
-        return Ok(new { message = $"{api.RunTargets.Count} terminal(is) aberto(s).", targets = api.RunTargets.Select(t => t.Name) });
+        return Ok(new { message = $"{api.RunTargets.Count} processo(s) iniciado(s).", targets = api.RunTargets.Select(t => t.Name) });
     }
 
     private static int KillDotnetInTargets(List<string> targetDirs)
     {
         int killed = 0;
 
-        // Mata dotnet pelo working directory (command line não inclui o path quando é só "dotnet run")
-        foreach (var proc in System.Diagnostics.Process.GetProcessesByName("dotnet"))
+        foreach (var proc in Process.GetProcessesByName("dotnet"))
         {
             try
             {
@@ -781,8 +1143,7 @@ public class DevPanelController : ControllerBase
             finally { proc.Dispose(); }
         }
 
-        // Mata node órfãos (ng serve) cujo command line contenha o path do projeto
-        foreach (var proc in System.Diagnostics.Process.GetProcessesByName("node"))
+        foreach (var proc in Process.GetProcessesByName("node"))
         {
             try
             {
@@ -804,17 +1165,16 @@ public class DevPanelController : ControllerBase
     {
         try
         {
-            var psi = new System.Diagnostics.ProcessStartInfo("wmic",
-                $"process where ProcessId={pid} get CommandLine /format:list")
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
             {
-                RedirectStandardOutput = true,
-                UseShellExecute        = false,
-                CreateNoWindow         = true
-            };
-            using var p = System.Diagnostics.Process.Start(psi)!;
-            var output = p.StandardOutput.ReadToEnd();
-            p.WaitForExit(3000);
-            return output;
+                var path = $"/proc/{pid}/cmdline";
+                return System.IO.File.Exists(path) ? System.IO.File.ReadAllText(path).Replace('\0', ' ') : "";
+            }
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
+                return RunProcess("ps", $"-p {pid} -o command=", timeoutMs: 3000);
+
+            // Windows
+            return RunProcess("wmic", $"process where ProcessId={pid} get CommandLine /format:list", timeoutMs: 3000);
         }
         catch { return ""; }
     }
@@ -823,16 +1183,104 @@ public class DevPanelController : ControllerBase
     {
         try
         {
-            var psi = new ProcessStartInfo("wmic",
-                $"process where ProcessId={pid} get WorkingDirectory /format:list")
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
             {
+                var link = $"/proc/{pid}/cwd";
+                return Directory.Exists(link) ? (new DirectoryInfo(link).ResolveLinkTarget(true)?.FullName ?? "") : "";
+            }
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
+                return RunProcess("lsof", $"-p {pid} -Fn", timeoutMs: 3000);
+
+            // Windows
+            return RunProcess("wmic", $"process where ProcessId={pid} get WorkingDirectory /format:list", timeoutMs: 3000);
+        }
+        catch { return ""; }
+    }
+
+    private static object LerArquivo(string caminho)
+    {
+        if (string.IsNullOrWhiteSpace(caminho))
+            return new { erro = "Caminho não informado." };
+
+        if (!System.IO.File.Exists(caminho))
+            return new { erro = $"Arquivo não encontrado: {caminho}" };
+
+        // Limita leitura a 50KB para não explodir o contexto do LLM
+        var info = new FileInfo(caminho);
+        if (info.Length > 51_200)
+        {
+            var preview = System.IO.File.ReadLines(caminho).Take(200);
+            return new { conteudo = string.Join('\n', preview), truncado = true, tamanho = info.Length };
+        }
+
+        return new { conteudo = System.IO.File.ReadAllText(caminho), truncado = false, tamanho = info.Length };
+    }
+
+    private object GitLog(string apiName, int quantidade)
+    {
+        var cfg = _config.LoadConfig();
+        var api = cfg.Apis.FirstOrDefault(a => string.Equals(a.Name, apiName, StringComparison.OrdinalIgnoreCase));
+        if (api is null)
+            return new { erro = $"API '{apiName}' não encontrada." };
+        if (string.IsNullOrEmpty(api.GitRepo) || !Directory.Exists(api.GitRepo))
+            return new { erro = $"Repositório não encontrado: {api.GitRepo}" };
+
+        var log = RunGit($"log --oneline --format=\"%h | %ad | %an | %s\" --date=short -{quantidade}", api.GitRepo);
+        var commits = log.Split('\n', StringSplitOptions.RemoveEmptyEntries)
+            .Select(l => l.Trim())
+            .Where(l => !string.IsNullOrEmpty(l))
+            .ToList();
+
+        return new { api = apiName, repo = api.GitRepo, commits };
+    }
+
+    private object ListarArquivos(string apiName, string? subdir, string? glob)
+    {
+        var cfg = _config.LoadConfig();
+        var api = cfg.Apis.FirstOrDefault(a => string.Equals(a.Name, apiName, StringComparison.OrdinalIgnoreCase));
+        if (api is null)
+            return new { erro = $"API '{apiName}' não encontrada." };
+        if (string.IsNullOrEmpty(api.GitRepo) || !Directory.Exists(api.GitRepo))
+            return new { erro = $"Repositório não encontrado: {api.GitRepo}" };
+
+        var baseDir = string.IsNullOrEmpty(subdir)
+            ? api.GitRepo
+            : Path.Combine(api.GitRepo, subdir);
+
+        if (!Directory.Exists(baseDir))
+            return new { erro = $"Diretório não encontrado: {baseDir}" };
+
+        var pattern = string.IsNullOrEmpty(glob) ? "*" : glob;
+        var arquivos = Directory.GetFiles(baseDir, pattern, SearchOption.AllDirectories)
+            .Where(f => !f.Contains(Path.DirectorySeparatorChar + "bin" + Path.DirectorySeparatorChar)
+                     && !f.Contains(Path.DirectorySeparatorChar + "obj" + Path.DirectorySeparatorChar)
+                     && !f.Contains(Path.DirectorySeparatorChar + ".git" + Path.DirectorySeparatorChar)
+                     && !f.Contains(Path.DirectorySeparatorChar + "node_modules" + Path.DirectorySeparatorChar))
+            .Select(f => f.Replace(api.GitRepo, "").TrimStart(Path.DirectorySeparatorChar))
+            .Take(200)
+            .ToList();
+
+        return new { api = apiName, baseDir, arquivos, total = arquivos.Count };
+    }
+
+    private static string RunProcess(string fileName, string arguments, string? workDir = null, int timeoutMs = 10000)
+    {
+        try
+        {
+            var psi = new ProcessStartInfo
+            {
+                FileName               = fileName,
+                Arguments              = arguments,
                 RedirectStandardOutput = true,
+                RedirectStandardError  = true,
                 UseShellExecute        = false,
                 CreateNoWindow         = true
             };
+            if (workDir != null) psi.WorkingDirectory = workDir;
             using var p = Process.Start(psi)!;
             var output = p.StandardOutput.ReadToEnd();
-            p.WaitForExit(3000);
+            p.WaitForExit(timeoutMs);
+            if (!p.HasExited) p.Kill();
             return output;
         }
         catch { return ""; }
@@ -996,31 +1444,26 @@ public class DevPanelController : ControllerBase
         return Ok(new { success = true });
     }
 
-    [DllImport("user32.dll")] private static extern bool SetForegroundWindow(IntPtr hWnd);
-    [DllImport("user32.dll")] private static extern bool BringWindowToTop(IntPtr hWnd);
-    [DllImport("user32.dll")] private static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, UIntPtr dwExtraInfo);
-
     // ── BROWSE ────────────────────────────────────────────────────────────────
 
     [HttpGet("browse")]
     public IActionResult Browse([FromQuery] string type = "folder", [FromQuery] string? filter = null)
     {
+#if WINDOWS
         string? selectedPath = null;
 
         var thread = new Thread(() =>
         {
             using var owner = new System.Windows.Forms.Form
             {
-                TopMost          = true,
-                StartPosition    = System.Windows.Forms.FormStartPosition.Manual,
-                Location         = new System.Drawing.Point(-2000, -2000),
-                Size             = new System.Drawing.Size(1, 1),
-                ShowInTaskbar    = false
+                TopMost       = true,
+                StartPosition = System.Windows.Forms.FormStartPosition.Manual,
+                Location      = new System.Drawing.Point(-2000, -2000),
+                Size          = new System.Drawing.Size(1, 1),
+                ShowInTaskbar = false
             };
             owner.Show();
 
-            // keybd_event(ALT down/up) engana o Windows para permitir SetForegroundWindow
-            // sem precisar de AttachThreadInput (que causa deadlock com o browser).
             keybd_event(0x12, 0, 0, UIntPtr.Zero);
             keybd_event(0x12, 0, 0x0002, UIntPtr.Zero);
             SetForegroundWindow(owner.Handle);
@@ -1048,14 +1491,26 @@ public class DevPanelController : ControllerBase
         thread.Join();
 
         return Ok(new { path = selectedPath });
+#else
+        return StatusCode(501, new { error = "Seletor de pasta não disponível nesta plataforma." });
+#endif
     }
+
+#if WINDOWS
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern bool SetForegroundWindow(IntPtr hWnd);
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern bool BringWindowToTop(IntPtr hWnd);
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, UIntPtr dwExtraInfo);
+#endif
 }
 
 // ── REQUEST MODELS ────────────────────────────────────────────────────────────
 
 public record DevRequestActionBody(string? Id, string? Api, string? Action);
 public record DevRequestResponderBody(string? Id, string? Resposta);
-public record DevRequestEditBody(string? Api, string? Tipo, string? Impacto, string? Descricao, string? Detalhes, string? DiretorioAlvo, string? ComentariosTeste, string? ConsideracoesRefazer);
+public record DevRequestEditBody(string? Api, string? Tipo, string? Impacto, string? Descricao, string? Detalhes, string? DiretorioAlvo, string? ComentariosTeste, string? ConsideracoesRefazer, bool? ImplementadoPeloUsuario);
 public record StartAppsRequest(string Api);
 
 public record SwitchRequest
@@ -1083,6 +1538,8 @@ public class AgentRequest
     public List<AgentHistoryItem>? History { get; set; }
     public string? ImageBase64 { get; set; }
     public string? ImageMimeType { get; set; }
+    public string? Model { get; set; }
+    public string? Llm { get; set; }
 }
 
 public class AgentHistoryItem

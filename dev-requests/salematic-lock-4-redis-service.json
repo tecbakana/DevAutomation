@@ -1,0 +1,18 @@
+{
+  "id": "salematic-lock-4-redis-service",
+  "api": "salematic",
+  "tipo": "feature",
+  "impacto": "alto",
+  "descricao": "Distributed Lock — Task 4: RedisStockLockService na Infrastructure",
+  "detalhes": "Implementar o distributed lock usando Redis via IConnectionMultiplexer.\n\n## 1. Adicionar referência direta ao StackExchange.Redis\n\n`Salematic.Infrastructure/Salematic.Infrastructure.csproj` — adicionar:\n```xml\n<PackageReference Include=\"StackExchange.Redis\" Version=\"2.8.16\" />\n```\n(já é dependência transitiva, só formalizar a referência direta)\n\n---\n\n## 2. Criar RedisStockLockService\n\n**Arquivo novo**: `Salematic.Infrastructure/Locking/RedisStockLockService.cs`\n\n```csharp\nusing Salematic.Domain.Interfaces;\nusing StackExchange.Redis;\n\nnamespace Salematic.Infrastructure.Locking;\n\npublic class RedisStockLockService : IStockLockService\n{\n    private static readonly string UnlockScript =\n        \"if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) else return 0 end\";\n\n    private readonly IDatabase _db;\n    private const int MaxRetries = 3;\n    private const int RetryDelayMs = 300;\n    private static readonly TimeSpan LockTtl = TimeSpan.FromSeconds(30);\n\n    public RedisStockLockService(IConnectionMultiplexer redis)\n    {\n        _db = redis.GetDatabase();\n    }\n\n    public async Task<IAsyncDisposable?> AcquireAsync(int produtoId, CancellationToken ct = default)\n    {\n        var key = $\"lock:estoque:{produtoId}\";\n        var token = Guid.NewGuid().ToString(\"N\");\n\n        for (var attempt = 0; attempt < MaxRetries; attempt++)\n        {\n            if (await _db.StringSetAsync(key, token, LockTtl, When.NotExists))\n                return new RedisLockHandle(_db, key, token);\n\n            await Task.Delay(RetryDelayMs, ct);\n        }\n\n        return null;\n    }\n\n    private sealed class RedisLockHandle : IAsyncDisposable\n    {\n        private readonly IDatabase _db;\n        private readonly string _key;\n        private readonly string _token;\n\n        public RedisLockHandle(IDatabase db, string key, string token)\n        {\n            _db = db;\n            _key = key;\n            _token = token;\n        }\n\n        public async ValueTask DisposeAsync()\n        {\n            await _db.ScriptEvaluateAsync(UnlockScript, new RedisKey[] { _key }, new RedisValue[] { _token });\n        }\n    }\n}\n```\n\n## Notas de segurança\n- `SET NX PX`: atomic — só seta se a chave não existe\n- Lua script no Dispose: garante que só o dono do lock o deleta (token comparison). Evita deletar lock de outra requisição caso o TTL tenha expirado e outra req tenha adquirido\n- TTL de 30s: liberação automática em caso de crash sem Dispose",
+  "url_externa": null,
+  "status": "pendente",
+  "impeditivo": false,
+  "resultado": null,
+  "prompt_agente": null,
+  "diretorio_alvo": "T:\\Developer\\salematic",
+  "timestamp": "2026-05-28T00:00:00Z",
+  "pendencias": null,
+  "resposta_usuario": null,
+  "timestamp_atualizacao": "2026-05-28T00:00:00Z"
+}

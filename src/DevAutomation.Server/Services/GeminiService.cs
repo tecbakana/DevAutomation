@@ -70,17 +70,55 @@ public class GeminiService
         },
         new {
             name = "solicitar_desenvolvimento",
-            description = "Registra uma solicitação de melhoria, nova feature ou correção de bug para ser implementada pelo orquestrador. Use quando identificar uma limitação, funcionalidade ausente ou problema no devautomation.",
+            description = "Registra uma dev-request para ser implementada pelo orquestrador. Siga o modelo definido no system prompt: preencha todos os campos com precisão técnica. Use somente após confirmar os requisitos com o solicitante.",
             parameters = new {
                 type = "object",
                 properties = new {
-                    descricao  = new { type = "string", description = "Descrição clara do que precisa ser implementado" },
-                    tipo       = new { type = "string", @enum = new[]{"nova_ferramenta","bugfix","feature","config"}, description = "Tipo da solicitação" },
-                    impacto    = new { type = "string", @enum = new[]{"baixo","medio","alto"}, description = "Impacto da mudança" },
-                    detalhes   = new { type = "string", description = "Detalhes técnicos adicionais (opcional)" },
-                    api        = new { type = "string", description = "Projeto alvo: devautomation, salematic, cmsx. Padrão: devautomation" }
+                    api                     = new { type = "string", description = "Nome do projeto alvo (ex: cmsx, salematic, forge)" },
+                    tipo                    = new { type = "string", @enum = new[]{"feature","bugfix","config","refactor"}, description = "Tipo da solicitação" },
+                    impacto                 = new { type = "string", @enum = new[]{"baixo","medio","alto"}, description = "Impacto da mudança no projeto" },
+                    descricao               = new { type = "string", description = "Verbo no imperativo + o que + onde. Ex: Adicionar validação de CPF no cadastro de cliente" },
+                    detalhes                = new { type = "string", description = "Contexto técnico completo: camadas afetadas, arquivos relevantes, comportamento esperado, critérios de aceite, edge cases" },
+                    implementado_pelo_usuario = new { type = "boolean", description = "true se o desenvolvedor já implementou — a dev-request vai direto para testes, pulando o agente" }
                 },
-                required = new[]{"descricao","tipo","impacto"}
+                required = new[]{"api","tipo","impacto","descricao","detalhes"}
+            }
+        },
+        new {
+            name = "ler_arquivo",
+            description = "Lê o conteúdo de um arquivo do projeto: CLAUDE.md, arquivos de memória .md, README, backlog, wiki local, etc. Use para entender contexto antes de criar uma dev-request.",
+            parameters = new {
+                type = "object",
+                properties = new {
+                    caminho = new { type = "string", description = "Caminho absoluto do arquivo a ser lido" },
+                    api     = new { type = "string", description = "Nome da API/projeto para validar permissão de acesso (opcional, melhora segurança)" }
+                },
+                required = new[]{"caminho"}
+            }
+        },
+        new {
+            name = "git_log",
+            description = "Retorna os commits recentes de um projeto. Use para entender as últimas features entregues antes de criar uma dev-request.",
+            parameters = new {
+                type = "object",
+                properties = new {
+                    api        = new { type = "string", description = "Nome da API ex: cmsx, salematic, forge" },
+                    quantidade = new { type = "integer", description = "Número de commits a retornar (padrão: 15)" }
+                },
+                required = new[]{"api"}
+            }
+        },
+        new {
+            name = "listar_arquivos",
+            description = "Lista arquivos em um diretório de projeto. Use para descobrir arquivos .md, wiki, backlog ou estrutura do projeto.",
+            parameters = new {
+                type = "object",
+                properties = new {
+                    api     = new { type = "string", description = "Nome da API cujo repositório será listado" },
+                    subdir  = new { type = "string", description = "Subdiretório relativo ao root do repo (opcional). Ex: docs, wiki, src" },
+                    glob    = new { type = "string", description = "Padrão glob para filtrar arquivos (opcional). Ex: *.md, *.cs" }
+                },
+                required = new[]{"api"}
             }
         }
     ];
@@ -244,6 +282,7 @@ public record GeminiResponse
     public string? Text { get; init; }
     public string? ToolName { get; init; }
     public JsonObject? ToolArgs { get; init; }
+    public string? ToolUseId { get; init; }
 }
 
 public record GeminiMessage(string Role, object[] Parts);
