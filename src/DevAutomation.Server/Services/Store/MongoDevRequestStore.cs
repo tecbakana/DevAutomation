@@ -14,7 +14,7 @@ public sealed class MongoDevRequestStore : IDevRequestStore
 
     public string? WatchDirectory => null;
 
-    public MongoDevRequestStore(string connectionString, string databaseName = "forge")
+    public MongoDevRequestStore(string connectionString, string databaseName = "orchestratr")
     {
         var client     = new MongoClient(connectionString);
         var db         = client.GetDatabase(databaseName);

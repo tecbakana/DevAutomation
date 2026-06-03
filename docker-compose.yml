@@ -1,23 +1,23 @@
 services:
 
-  forge:
+  orchestratr:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: forge
+    container_name: orchestratr
     restart: unless-stopped
     ports:
       - "8080:8080"
     environment:
       # ── Caminhos internos ao container ────────────────────────────────────────
-      DevAutomation__RootPath: /forge
-      DevAutomation__ConfigFile: /forge/config/environments.json
-      DevAutomation__StateFile: /forge/config/state.json
-      DevAutomation__TemplatesDir: /forge/templates
-      DevAutomation__PanelDir: /forge/panel
-      DevAutomation__ScriptsDir: /forge/scripts
-      DevAutomation__DevRequestsDir: /forge/dev-requests
-      DevAutomation__SwitchScript: /forge/scripts/Switch-Environment.ps1
+      DevAutomation__RootPath: /orchestratr
+      DevAutomation__ConfigFile: /orchestratr/config/environments.json
+      DevAutomation__StateFile: /orchestratr/config/state.json
+      DevAutomation__TemplatesDir: /orchestratr/templates
+      DevAutomation__PanelDir: /orchestratr/panel
+      DevAutomation__ScriptsDir: /orchestratr/scripts
+      DevAutomation__DevRequestsDir: /orchestratr/dev-requests
+      DevAutomation__SwitchScript: /orchestratr/scripts/Switch-Environment.ps1
 
       # ── Qdrant — usa o container já existente no host ────────────────────────
       Qdrant__Host: host.docker.internal
@@ -34,7 +34,7 @@ services:
 
       # ── Store de dev-requests: json (padrão) | sqlite | mongo ────────────────
       DevAutomation__StoreType: json
-      # DevAutomation__SqliteConnectionString: "Data Source=/forge/dev-requests/devrequests.db"
+      # DevAutomation__SqliteConnectionString: "Data Source=/orchestratr/dev-requests/devrequests.db"
       # DevAutomation__MongoConnectionString: "mongodb://mongo:27017"
 
       # ── Langfuse (opcional — deixe vazio para desabilitar) ───────────────────
@@ -43,8 +43,8 @@ services:
       Langfuse__BaseUrl: https://cloud.langfuse.com
 
       # ── RAG sources — projetos a indexar (montar como volumes abaixo) ─────────
-      # Rag__Sources__0__Root: /projects/forge/src
-      # Rag__Sources__0__Projeto: forge
+      # Rag__Sources__0__Root: /projects/orchestratr/src
+      # Rag__Sources__0__Projeto: orchestratr
       # Rag__Sources__0__Exts__0: .cs
       # Rag__Sources__1__Root: /projects/cmsx
       # Rag__Sources__1__Projeto: cmsx
@@ -53,10 +53,10 @@ services:
 
     volumes:
       # Estado e dev-requests persistidos fora do container
-      - forge-devrequests:/forge/dev-requests
-      - forge-config:/forge/config
+      - orchestratr-devrequests:/orchestratr/dev-requests
+      - orchestratr-config:/orchestratr/config
 
-      # Monte aqui os repositórios de código que o Forge gerencia:
+      # Monte aqui os repositórios de código que o orchestratR gerencia:
       # - /caminho/local/projeto:/projects/projeto:ro
 
     healthcheck:
@@ -69,14 +69,14 @@ services:
   # ── MongoDB (opcional — ative se StoreType=mongo) ────────────────────────────
   # mongo:
   #   image: mongo:8
-  #   container_name: forge-mongo
+  #   container_name: orchestratr-mongo
   #   restart: unless-stopped
   #   ports:
   #     - "27017:27017"
   #   volumes:
-  #     - forge-mongo-data:/data/db
+  #     - orchestratr-mongo-data:/data/db
 
 volumes:
-  forge-devrequests:
-  forge-config:
-  # forge-mongo-data:
+  orchestratr-devrequests:
+  orchestratr-config:
+  # orchestratr-mongo-data:

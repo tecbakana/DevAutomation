@@ -26,7 +26,7 @@ public class OrchestratorService : BackgroundService
     private readonly RagService _rag;
     private readonly RagIndexerService _indexer;
     private readonly System.Collections.Concurrent.ConcurrentDictionary<string, CancellationTokenSource> _runningCts = new();
-    private readonly ForgeAuditorService _auditorService;
+    private readonly AuditorService _auditorService;
 
     private static readonly string _homeDir = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
     private static readonly Dictionary<string, string> _memoryDirMap = new(StringComparer.OrdinalIgnoreCase)
@@ -46,7 +46,7 @@ public class OrchestratorService : BackgroundService
         ILogger<OrchestratorService> logger,
         RagService rag,
         RagIndexerService indexer,
-        ForgeAuditorService auditorService)
+        AuditorService auditorService)
     {
         _strategy           = strategy;
         _store              = store;

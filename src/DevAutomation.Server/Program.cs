@@ -18,12 +18,12 @@ using OpenTelemetry.Exporter;
 using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
 
-// Detecta o diretório raiz do Forge independente do nome da pasta
+// Detecta o diretório raiz do orchestratR independente do nome da pasta
 var searchDir = new DirectoryInfo(AppContext.BaseDirectory);
 while (searchDir != null && !Directory.Exists(Path.Combine(searchDir.FullName, "config")))
     searchDir = searchDir.Parent;
 var rootPath = searchDir?.FullName
-    ?? throw new InvalidOperationException("Diretório raiz do Forge não encontrado (pasta 'config' ausente).");
+    ?? throw new InvalidOperationException("Diretório raiz do orchestratR não encontrado (pasta 'config' ausente).");
 
 #pragma warning disable CA1305
 Log.Logger = new LoggerConfiguration()
@@ -52,7 +52,7 @@ builder.Services.AddSingleton<ClaudeService>();
 var qdrantHost = builder.Configuration["Qdrant:Host"] ?? "localhost";
 var qdrantPort = int.TryParse(builder.Configuration["Qdrant:Port"], out var p) ? p : 6334;
 builder.Services.AddSingleton<QdrantClient>(_ => new QdrantClient(qdrantHost, qdrantPort));
-builder.Services.AddSingleton<ForgeAuditorService>();
+builder.Services.AddSingleton<AuditorService>();
 builder.Services.AddSingleton<DevRequestService>();
 
 builder.Services.Configure<OllamaSettings>(
@@ -124,12 +124,12 @@ if (!langfuseEnabled)
     Log.Warning("Langfuse desabilitado: Langfuse:PublicKey ou Langfuse:SecretKey não configurados em user-secrets.");
 
 builder.Services.AddOpenTelemetry()
-    .ConfigureResource(r => r.AddService("Forge"))
+    .ConfigureResource(r => r.AddService("orchestratR"))
     .WithTracing(tracing =>
     {
         tracing
             .SetSampler(new AlwaysOnSampler())
-            .AddSource("Forge.SoftwareFactory.Core");
+            .AddSource("orchestratR.Core");
 
         if (langfuseEnabled)
         {
@@ -199,7 +199,7 @@ startupLogger.LogInformation(
 app.UseSwagger();
 app.UseSwaggerUI(c =>
 {
-    c.SwaggerEndpoint("/swagger/v1/swagger.json", "Forge API v1");
+    c.SwaggerEndpoint("/swagger/v1/swagger.json", "orchestratR API v1");
     c.RoutePrefix = "swagger";
 });
 

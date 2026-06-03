@@ -3,10 +3,10 @@ using System.Text.Json;
 
 namespace DevAutomation.Services;
 
-public class ForgeAuditorService
+public class AuditorService
 {
     private readonly IHttpClientFactory _httpFactory;
-    private readonly ILogger<ForgeAuditorService> _logger;
+    private readonly ILogger<AuditorService> _logger;
     private readonly string _url;
 
     private static readonly JsonSerializerOptions _jsonOpts = new()
@@ -15,11 +15,11 @@ public class ForgeAuditorService
         PropertyNameCaseInsensitive = true
     };
 
-    public ForgeAuditorService(IConfiguration config, IHttpClientFactory httpFactory, ILogger<ForgeAuditorService> logger)
+    public AuditorService(IConfiguration config, IHttpClientFactory httpFactory, ILogger<AuditorService> logger)
     {
         _httpFactory = httpFactory;
         _logger      = logger;
-        _url         = config.GetValue<string>("DevAutomation:ForgeAuditorUrl") ?? "http://localhost:8000";
+        _url         = config.GetValue<string>("DevAutomation:AuditorUrl") ?? "http://localhost:8000";
     }
 
     public async Task<RevisorResponseModel?> VerificarQualidadeAsync(string task, string codigo, string regras)
