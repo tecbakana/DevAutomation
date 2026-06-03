@@ -1,439 +1,163 @@
-# DevAutomation — Automação de Ambientes de Desenvolvimento com IA ![.NET](https://img.shields.io/badge/.NET-6-blue) ![AI](https://img.shields.io/badge/AI-LLM-green)
+# orchestratR
 
-Ferramenta para automatizar o gerenciamento de múltiplas APIs .NET entre diferentes ambientes (developer, homolog, produção), incluindo operações de configuração, git e execução — com suporte a controle via interface web e agente de IA.
+![.NET](https://img.shields.io/badge/.NET-9-blue)
+![AI](https://img.shields.io/badge/AI-Claude%20%7C%20Gemini-green)
 
-## 🚀 O que este projeto resolve
+Orquestrador de ambientes de desenvolvimento com IA. Gerencia dev-requests em um kanban, despacha implementações para agentes de LLM (Claude CLI ou Gemini), revisa o código gerado automaticamente e mantém um índice RAG do código-fonte para contexto.
 
-Ambientes com múltiplas APIs e configurações exigem operações repetitivas e propensas a erro, como:
+Acesso via painel web local em `http://localhost:8080`.
 
-- troca manual de branches  
-- atualização de configurações por ambiente  
-- abertura de múltiplas soluções  
-- sincronização com servidores  
+---
 
-👉 O DevAutomation automatiza esse fluxo de ponta a ponta.
+## Funcionalidades
 
-## ⚙️ Principais funcionalidades
+- **Kanban de dev-requests** — colunas: Backlog, Aguardando, Em progresso, Impeditivo, Em testes, Revisão, Concluído, Erro
+- **Orquestração por LLM** — despacha a implementação para Claude CLI ou Gemini conforme disponibilidade
+- **Revisão automática** — auditor externo valida o código antes de mover para Em testes
+- **RAG** — indexa o código-fonte em Qdrant com embeddings via Ollama; contexto injetado nas prompts do agente
+- **Feature detection** — Qdrant, Ollama, Claude CLI e Gemini detectados no startup; ausência de qualquer um degrada graciosamente sem derrubar o servidor
+- **Troca de ambiente** — switch entre branches (developer / homolog / master) de múltiplos projetos
+- **Operações git** — status, diff, commit e discard pelo painel
+- **Observabilidade** — traces OpenTelemetry exportados para Langfuse
 
-- Troca completa de ambiente (developer / homolog / master) com um comando  
-- Automação de operações git (checkout, pull, status)  
-- Aplicação automática de configurações (JSON e XML) por ambiente  
-- Abertura automatizada de soluções no Visual Studio (com suporte a virtual desktops)  
-- Painel web local para controle visual da operação  
-- Integração com agente de IA para execução de comandos via linguagem natural  
+---
 
-## 🧠 IA integrada (diferencial)
+## Stack
 
-O sistema inclui um agente baseado em LLM que permite controlar a ferramenta via linguagem natural:
+| Camada | Tecnologia |
+|---|---|
+| Servidor | ASP.NET Core 9, C# |
+| Painel | HTML/JS estático (sem build step) |
+| Real-time | SignalR |
+| Store de dev-requests | JSON (padrão) \| SQLite \| MongoDB |
+| RAG — vetores | Qdrant |
+| RAG — embeddings | Ollama (`bge-m3`) |
+| LLM orquestrador | Claude CLI \| Gemini 2.5 Flash |
+| Tracing | OpenTelemetry → Langfuse |
 
-**Exemplos:**
-- “Muda para homolog”  
-- “Tem alteração no git?”  
-- “Abre só o TaaS em developer”  
+---
 
-👉 O agente interpreta a intenção e executa comandos reais no sistema (function calling).
+## Configuração rápida
 
-## 💡 Exemplo de uso
+### 1. Dependências opcionais
 
-Um único comando executa:
+| Serviço | Para que serve | Sem ele |
+|---|---|---|
+| Claude CLI | Execução de dev-requests | Orquestrador desabilitado |
+| Qdrant | Armazenar vetores RAG | RAG desabilitado |
+| Ollama + `bge-m3` | Gerar embeddings | RAG desabilitado |
+| Langfuse | Traces de LLM | Tracing desabilitado |
 
-- troca de branch  
-- pull do repositório  
-- aplicação de configurações  
-- abertura das soluções no Visual Studio  
+### 2. User secrets (desenvolvimento local)
 
-## 🧱 Arquitetura
+```bash
+# Gemini (obrigatório para orquestração via Gemini)
+dotnet user-secrets set "agent:apiKey" "<gemini-api-key>"
 
-- Scripts PowerShell para orquestração  
-- Templates de configuração por ambiente  
-- Interface web local (painel de controle)  
-- Integração com LLM (Google Gemini) via function calling  
+# Langfuse (opcional)
+dotnet user-secrets set "Langfuse:PublicKey" "<key>"
+dotnet user-secrets set "Langfuse:SecretKey" "<key>"
 
-## 🔧 Tecnologias
-
-- PowerShell  
-- .NET / C#  
-- JSON / XML  
-- Google Gemini (LLM)  
-- Automação de ambiente Windows  
-
-## 🖥️ Painel Web
-
-Interface local para:
-
-- visualizar status das APIs  
-- trocar ambiente  
-- executar operações git  
-- editar templates  
-- interagir com o agente de IA  
-
-## 📌 Diferenciais
-
-- Automação completa do ciclo de desenvolvimento local  
-- Redução de erros manuais em configuração de ambientes  
-- Uso de IA como interface operacional (não apenas assistente)  
-- Integração com múltiplos repositórios e projetos simultaneamente  
-
-## Guia de Instalação e Uso
-
-## Estrutura de Pastas
-
+# Store alternativo (padrão: json)
+dotnet user-secrets set "DevAutomation:StoreType" "mongo"
+dotnet user-secrets set "DevAutomation:MongoConnectionString" "mongodb://localhost:27017"
 ```
-DevAutomation\
-├── Forge.sln                      ← solução Visual Studio consolidada
-├── src\
-│   └── DevAutomation.Server\      ← servidor ASP.NET Core 9
-│       ├── DevAutomation.Server.csproj
-│       ├── Program.cs
-│       ├── Controllers\
-│       ├── Services\
-│       ├── Models\
-│       ├── Hubs\
-│       └── appsettings.json
-├── config\
-│   ├── environments.json          ← configuração central (APIs, branches, servidores, agente IA)
-│   └── state.json                 ← estado atual em tempo de execução (gerado automaticamente)
-├── scripts\
-│   ├── Switch-Environment.ps1     ← orquestrador principal
-│   ├── Apply-Configs.ps1          ← merge de configurações (JSON/XML)
-│   ├── Start-DevPanel.ps1         ← servidor HTTP do painel web
-│   ├── Open-Solutions.ps1         ← abre solutions no VS com virtual desktops
-│   ├── Git-Operations.ps1         ← operações git (status, commit, discard)
-│   ├── Server-Operations.ps1      ← pull de configs dos servidores remotos
-│   └── Invoke-GeminiAgent.ps1     ← integração com Google Gemini (agente de IA)
-├── batches\
-│   ├── go-developer.bat           ← troca completa para developer
-│   ├── go-homolog.bat             ← troca completa para homolog
-│   ├── go-master.bat              ← troca completa para master
-│   ├── reload-config-only.bat     ← só reaplica configs, sem git/VS
-│   ├── start-panel.bat            ← inicia o painel web (localhost:8080)
-│   ├── open-[SOLUTION NAME].bat     ← abre solution [SOLUTION NAME] no VS
-├── templates\
-│   └── {NomeDaAPI}\
-│       ├── developer\
-│       │   ├── default.json (ou .xml)
-│       │   ├── pg.json
-│       │   ├── gruponos.json
-│       │   └── fagron.json
-│       ├── homolog\
-│       │   └── default.json (ou .xml)
-│       └── master\
-│           └── default.json (ou .xml)
-├── panel\
-│   └── index.html                 ← interface web do painel
-└── tools\
-    └── VirtualDesktop11.exe       ← utilitário para controle de virtual desktops
+
+### 3. Executar
+
+```bash
+cd src/DevAutomation.Server
+dotnet run
+```
+
+O painel abre automaticamente em `http://localhost:8080`.
+
+---
+
+## Store de dev-requests
+
+Configurável via `DevAutomation:StoreType`:
+
+| Valor | Backend | Quando usar |
+|---|---|---|
+| `json` | Arquivos `.json` em `dev-requests/` | Padrão, sem dependências |
+| `sqlite` | SQLite em `dev-requests/devrequests.db` | Dev local persistente |
+| `mongo` | MongoDB | Produção / multiusuário |
+
+Para MongoDB com Docker:
+```bash
+docker run -d --name orchestratr-mongo -p 27017:27017 mongo:8
 ```
 
 ---
 
-## Abrindo a Solução no Visual Studio
+## Docker
 
-A solução consolidada `Forge.sln` na raiz do projeto contém o servidor DevAutomation:
-
-**Opção 1: Via Visual Studio**
-1. Abra Visual Studio 2022 ou superior
-2. Arquivo → Abrir Solução
-3. Navegue até `T:\DevAutomation\Forge.sln` e abra
-4. Pressione `Ctrl+Shift+B` para compilar
-
-**Opção 2: Via linha de comando**
-```cmd
-cd T:\DevAutomation
-devenv Forge.sln
+```bash
+docker compose up -d
 ```
 
-**Opção 3: Via dotnet CLI**
-```cmd
-cd T:\DevAutomation
-dotnet build Forge.sln
-dotnet run --project src/DevAutomation.Server
+O `docker-compose.yml` inclui o serviço `orchestratr`. MongoDB comentado — descomente e altere `StoreType` para ativar.
+
+---
+
+## Estrutura
+
+```
+orchestratR/
+├── src/
+│   └── DevAutomation.Server/
+│       ├── Controllers/         — API REST
+│       ├── Hubs/                — SignalR
+│       ├── Models/              — DevRequest, FeatureFlags
+│       └── Services/
+│           ├── Orchestration/   — ClaudeCliStrategy, NoopStrategy
+│           ├── Store/           — IDevRequestStore (JSON/SQLite/Mongo)
+│           ├── OrchestratorService.cs
+│           ├── RagIndexerService.cs
+│           ├── RagService.cs
+│           └── AuditorService.cs
+├── panel/                       — Painel web (index.html)
+├── config/
+│   ├── environments.json        — APIs, branches, agente
+│   └── state.json               — estado em tempo de execução
+├── templates/                   — Templates de config por ambiente
+├── dev-requests/                — Fila JSON (quando StoreType=json)
+├── scripts/                     — PowerShell (Switch-Environment, git, etc.)
+├── batches/                     — Atalhos .bat
+└── docker-compose.yml
 ```
 
 ---
 
-## Passo a Passo de Configuração
+## API principal
 
-### 1. Copiar os arquivos
+| Método | Rota | Descrição |
+|---|---|---|
+| `GET` | `/api/devrequests` | Lista todas as dev-requests |
+| `POST` | `/api/devrequests` | Cria uma nova dev-request |
+| `PUT` | `/api/devrequests/{id}` | Edita campos de uma dev-request |
+| `POST` | `/api/devrequests/action` | Executa uma ação (aprovar, completar, cancelar…) |
+| `GET` | `/api/health` | Health check |
+| `GET` | `/api/platform` | Feature flags e status dos serviços |
+| `GET` | `/api/rag/stats` | Estatísticas do índice RAG |
+| `POST` | `/api/rag/reindex` | Força reindexação |
 
-Copie os arquivos para o diretório desejado respeitando a estrutura acima.
-
-### 2. Habilitar execução de scripts PowerShell (se necessário)
-
-Execute uma vez como Administrador:
-
-```powershell
-Set-ExecutionPolicy RemoteSigned -Scope CurrentUser
-```
-
-### 3. Editar `config\environments.json`
-
-> **AVISO DE SEGURANÇA:** O `environments.json` contém API keys (Gemini) e senhas de servidores. **Nunca commitar este arquivo com dados reais.** Mantenha-o no `.gitignore` ou use um arquivo de exemplo sem credenciais (`environments.example.json`). Incidente registrado: API key do Gemini foi exposta em commit (2026-04-13).
-
-O arquivo central de configuração define todas as APIs gerenciadas, branches, servidores remotos e a chave da IA.
-
-#### Estrutura de uma entrada de API:
-
-```json
-{
-  "apis": [
-    {
-      "name": "NomeDaAPI",
-      "configType": "json",
-      "configFile": "appsettings.json",
-      "projectPath": "T:\\Developer\\Projetos\\MinhaAPI\\MinhaAPI",
-      "solutionPath": "T:\\Developer\\Projetos\\MinhaAPI\\MinhaAPI.sln",
-      "gitRepo": "T:\\Developer\\Projetos\\MinhaAPI",
-      "batchOpen": "T:\\DevAutomation\\batches\\open-minhaapi.bat",
-      "desktop": 1,
-      "clients": ["default", "pg", "gruponos"]
-    }
-  ]
-}
-```
-
-| Campo          | Descrição                                                              |
-|----------------|------------------------------------------------------------------------|
-| `name`         | Identificador da API — deve ser idêntico ao nome da pasta em `templates\` |
-| `configType`   | `"json"` para appsettings.json, `"xml"` para Web.config               |
-| `configFile`   | Nome do arquivo de config (ex: `"appsettings.json"`, `"Web.config"`)  |
-| `projectPath`  | Caminho até a pasta do projeto (onde fica o arquivo de config)        |
-| `solutionPath` | Caminho até o `.sln` para abrir no VS                                 |
-| `gitRepo`      | Raiz do repositório git                                               |
-| `batchOpen`    | Batch que abre a solution no VS (pode ser omitido)                    |
-| `desktop`      | Número do virtual desktop onde a solution será aberta (1–n)           |
-| `clients`      | Lista de clientes com templates específicos (sempre inclua `"default"`) |
-
-#### Configuração de branches:
-
-```json
-{
-  "branches": {
-    "developer": "developer",
-    "homolog": "homolog",
-    "master": "master"
-  }
-}
-```
-
-#### Configuração do agente de IA:
-
-```json
-{
-  "agent": {
-    "apiKey": "SUA_CHAVE_GEMINI_AQUI",
-    "model": "gemini-2.0-flash",
-    "endpoint": "https://generativelanguage.googleapis.com/v1beta/models"
-  }
-}
-```
-
-#### Configuração de servidores remotos (opcional):
-
-```json
-{
-  "servers": {
-    "developer": {
-      "host": "IP_DO_SERVIDOR",
-      "user": "USUARIO",
-      "password": "SENHA",
-      "basePath": "C$\\inetpub\\wwwroot"
-    }
-  }
-}
-```
-
-### 4. Preencher os templates
-
-Os templates contêm **apenas as chaves que mudam** entre ambientes — o script faz merge com o arquivo original.
-
-#### Para APIs com `appsettings.json` (configType: json):
-
-1. Abra o `appsettings.json` atual da API
-2. Identifique as chaves que mudam entre developer / homolog / master
-3. Copie **apenas essas chaves** para `templates\{NomeDaAPI}\{ambiente}\default.json`
-4. Para clientes específicos (pg, gruponos, fagron), crie arquivos separados com as chaves que diferem do `default`
-
-**Exemplo** (`templates\[API]\developer\default.json`):
-```json
-{
-  "ConnectionStrings": {
-    "DefaultConnection": "Server=dev-server;Database=[DATABASE];..."
-  },
-  "TaxEngineUrl": "http://dev-taxengine/api"
-}
-```
-
-#### Para APIs com `Web.config` (configType: xml):
-
-1. Abra o `Web.config` atual do projeto
-2. Copie as entradas de `<appSettings>` e `<connectionStrings>` que mudam
-3. Cole no template XML correspondente
-
-**Exemplo** (`templates\[API]\developer\default.xml`):
-```xml
-<configuration>
-  <appSettings>
-    <add key="ServiceUrl" value="http://dev-server/service" />
-  </appSettings>
-  <connectionStrings>
-    <add name="DefaultConnection" connectionString="Server=dev-server;..." />
-  </connectionStrings>
-</configuration>
-```
-
-O script substitui **apenas as chaves listadas** no template — o restante do Web.config fica intacto.
-
-### 5. Testar sem risco
-
-Antes de usar com git e VS, teste só a aplicação de configs:
-
-```bat
-powershell -ExecutionPolicy Bypass -File "T:\DevAutomation\scripts\Switch-Environment.ps1" -Environment developer
-```
-
-Verifique se os arquivos de configuração foram atualizados corretamente nas APIs.
+Swagger disponível em `http://localhost:8080/swagger`.
 
 ---
 
-## Uso no Dia a Dia
+## Status de dev-requests
 
-### Atalhos rápidos (batch files)
-
-| Situação                            | Arquivo a executar        |
-|-------------------------------------|---------------------------|
-| Iniciar o dia em developer          | `go-developer.bat`        |
-| Atender chamado / testar em homolog | `go-homolog.bat`          |
-| Validar em master                   | `go-master.bat`           |
-| Só reaplicar configs (sem git/VS)   | `reload-config-only.bat`  |
-| Abrir o painel web                  | `start-panel.bat`         |
-
-> Coloque os `.bat` de atalho direto na área de trabalho para acesso rápido.
-
-### Via linha de comando
-
-**Troca completa (fechar VS → git → configs → abrir VS):**
-```bat
-powershell -ExecutionPolicy Bypass -File "T:\DevAutomation\scripts\Switch-Environment.ps1" ^
-  -Environment homolog -CloseVisualStudio -GitPull -OpenVisualStudio
-```
-
-**Forçar troca ignorando alterações não commitadas:**
-```bat
-powershell -ExecutionPolicy Bypass -File "T:\DevAutomation\scripts\Switch-Environment.ps1" ^
-  -Environment homolog -CloseVisualStudio -GitPull -OpenVisualStudio -Force
-```
-
-**Processar apenas APIs específicas:**
-```bat
-powershell -ExecutionPolicy Bypass -File "T:\DevAutomation\scripts\Switch-Environment.ps1" ^
-  -Environment developer -Api "TaaS,TaxEngineRest" -GitPull
-```
-
-**Trocar para cliente específico:**
-```bat
-powershell -ExecutionPolicy Bypass -File "T:\DevAutomation\scripts\Switch-Environment.ps1" ^
-  -Environment developer -Client pg
-```
-
----
-
-## Parâmetros do Switch-Environment.ps1
-
-| Parâmetro            | Obrigatório | Descrição                                              |
-|----------------------|-------------|--------------------------------------------------------|
-| `-Environment`       | Sim         | `developer`, `homolog` ou `master`                     |
-| `-Api`               | Não         | Filtra APIs por nome separado por vírgula (ex: `"TaaS,TaxEngineRest"`) |
-| `-Client`            | Não         | Template de cliente a aplicar (ex: `pg`, `gruponos`). Padrão: `default` |
-| `-CloseVisualStudio` | Não         | Fecha as instâncias do VS antes de trocar              |
-| `-GitPull`           | Não         | Faz `git checkout <branch>` + `git pull` em cada repo |
-| `-OpenVisualStudio`  | Não         | Abre as solutions no VS ao final                       |
-| `-Force`             | Não         | Ignora alterações não commitadas no git                |
-
----
-
-## Painel Web
-
-Execute `start-panel.bat` para iniciar o servidor local. Acesse em: **http://localhost:8080**
-
-### Funcionalidades do painel
-
-- **Status em tempo real** — ambiente atual, branch e cliente de cada API
-- **Troca de ambiente** — selecione o ambiente e clique em Switch (equivale ao batch)
-- **Filtro por API** — processe apenas as APIs selecionadas
-- **Editor de templates** — visualize e edite os arquivos de template diretamente pelo painel
-- **Operações git:**
-  - Ver arquivos modificados com diff
-  - Verificar se o branch está à frente/atrás do remote
-  - Commit com mensagem
-  - Descartar alterações
-- **Pull de configs dos servidores** — busca e salva configs remotas como templates locais
-- **Agente de IA** — controle a ferramenta em linguagem natural via chat (ver seção abaixo)
-
----
-
-## Agente de IA (Google Gemini)
-
-O painel inclui um chat integrado ao Google Gemini 2.0 Flash. O agente entende comandos em português e executa ações diretamente na ferramenta.
-
-### Comandos suportados via chat
-
-| Intenção                        | Exemplo de mensagem                        |
-|---------------------------------|--------------------------------------------|
-| Trocar de ambiente              | "Muda para homolog"                        |
-| Trocar ambiente de uma API      | "Vai para developer só no TaaS"            |
-| Ver status atual                | "Qual é o ambiente atual?"                 |
-| Ver arquivos modificados        | "Tem alguma alteração no git?"             |
-| Verificar sincronização         | "O branch está atualizado?"                |
-| Listar branches disponíveis     | "Quais branches existem no TaxEngineRest?" |
-
-O agente mantém histórico de conversa e usa function calling para executar as ações.
-
----
-
-## Virtual Desktops
-
-O script `Open-Solutions.ps1` usa o `VirtualDesktop11.exe` para abrir cada solution automaticamente no desktop correto. Configure o campo `"desktop"` de cada API no `environments.json`.
-
-**Requisito:** Windows 10/11 com múltiplos virtual desktops criados previamente.
-
-Se o `VirtualDesktop11.exe` não estiver disponível, o script abre o VS normalmente sem trocar o desktop.
-
----
-
-## Pull de Configs dos Servidores Remotos
-
-O painel web permite buscar os arquivos de configuração diretamente dos servidores (homolog, master) via UNC (`\\servidor\C$\...`) e salvá-los como templates locais.
-
-Configure as credenciais de cada servidor na seção `"servers"` do `environments.json`.
-
----
-
-## Solução de Problemas
-
-**Script não executa (erro de ExecutionPolicy):**
-```powershell
-Set-ExecutionPolicy RemoteSigned -Scope CurrentUser
-```
-
-**"Template não encontrado":**
-Verifique se o campo `"name"` no `environments.json` é idêntico ao nome da pasta em `templates\`.
-Ex: `"name": "TaaS"` exige que exista `templates\TaaS\`.
-
-**"Repositório não encontrado":**
-Verifique o campo `"gitRepo"` no `environments.json`. Use barras duplas: `T:\\Developer\\Projetos\\MinhaAPI`.
-
-**VS não fecha / fecha com prompt de salvamento:**
-Comportamento esperado — o VS pergunta sobre arquivos não salvos. Salve ou descarte e o script continua.
-
-**JSON inválido no template:**
-Remova quaisquer comentários `//` dos templates `.json` — JSON puro não aceita comentários.
-
-**Painel não abre:**
-Verifique se a porta 8080 está livre. Ajuste o campo `port` no `Start-DevPanel.ps1` se necessário.
-
-**Agente de IA não responde:**
-Verifique se a `apiKey` na seção `"agent"` do `environments.json` é válida.
-
-**Virtual desktop não troca:**
-Confirme que o `VirtualDesktop11.exe` está em `tools\` e que os desktops virtuais estão criados no Windows.
+| Status | Descrição |
+|---|---|
+| `pendente` | Aguardando aprovação |
+| `aguardando_aprovacao` | Em revisão manual |
+| `in_progress` | Agente implementando |
+| `em_testes` | Aguarda aprovação de testes |
+| `revisao_amarela` | Revisão com avisos |
+| `revisao_reprovada` | Revisão reprovou |
+| `impeditivo` | Agente bloqueado, aguarda resposta |
+| `done` | Concluído |
+| `error` | Erro na execução |
+| `cancelado` | Cancelado |
